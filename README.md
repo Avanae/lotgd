@@ -15,4 +15,4 @@ This is my version, based on the fork from [Oliver Brendel](https://github.com/N
 # Get Involved
 
 Get involved in the development.
-[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)]((https://discord.com/invite/dWEDQMaTcn)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/dWEDQMaTcn)
