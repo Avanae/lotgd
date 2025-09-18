@@ -1,6 +1,6 @@
 ![PHP](https://img.shields.io/badge/php-%23777BB4.svg?style=for-the-badge&logo=php&logoColor=white)
 ![ChatGPT](https://img.shields.io/badge/chatGPT-74aa9c?style=for-the-badge&logo=openai&logoColor=white)
-![Discord](https://nexusdev.nl)
+![Join Discord](https://img.shields.io/badge/Join%20Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)
 
 # Legend of the Green Dragon 
 
