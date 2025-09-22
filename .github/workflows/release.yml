@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract version
+        id: vars
+        run: |
+          # Remove leading 'v' from the tag name
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Create archives
+        run: |
+          VERSION=${{ steps.vars.outputs.VERSION }}
+          mkdir dist
+          tar --exclude='.git*' --exclude='.github' --exclude='tests' \
+              --exclude='phpunit.xml' --exclude='.phpunit.result.cache' \
+              --exclude='dist' -czf "dist/lotgd-${VERSION}.tar.gz" .
+          zip -r "dist/lotgd-${VERSION}.zip" . \
+              -x '*.git*' -x '.github/*' -x 'tests/*' -x 'phpunit.xml' -x '.phpunit.result.cache' -x 'dist/*'
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lotgd-${{ steps.vars.outputs.VERSION }}
+          path: |
+            dist/lotgd-${{ steps.vars.outputs.VERSION }}.tar.gz
+            dist/lotgd-${{ steps.vars.outputs.VERSION }}.zip
