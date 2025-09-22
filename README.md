@@ -10,3 +10,7 @@ This is a fork of the original Legend of the Green Dragon game by Eric "MightyE"
 The last version, Dragonprime Edition 1.1.2, was based on PHP 5 which is now deprecated. 
 
 This is my version, based on the fork from [Oliver Brendel](https://github.com/NB-Core), which is rewritten in PHP 8.4, and is my vision of how I wanted Legend of the Green Dragon to play and feel with some added RuneScape flair. While the game adheres to the original look and feel, the game has been spiced up a little bit with some RuneScape flair adding to the lore.
+
+# Things to keep in mind
+
+My 'Gielinor Edition' is still in essence [Oliver Brendel's Nb-Core](https://github.com/NB-Core). What makes mine different are the flavor texts and the core modules. This version focusses on RuneScape mechanics and addons. It deviates from the original LoGD lore and completely transforms the lore into RuneScape. If that is not your thing, I highly recommend using the aforementioned version of LoGD. 
