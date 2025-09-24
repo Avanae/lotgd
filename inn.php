@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 use Lotgd\Commentary;
 use Lotgd\Buffs;
+use Lotgd\DateTime;
 use Lotgd\Nav\VillageNav;
 use Lotgd\Sanitize;
 use Lotgd\Http;
 use Lotgd\Events;
 use Lotgd\Translator;
+use Lotgd\Pvp;
+use Lotgd\Nav;
+use Lotgd\Page\Header;
+use Lotgd\Page\Footer;
+use Lotgd\Partner;
 
 // addnews ready
 // translator ready
 // mail ready
 require_once __DIR__ . "/common.php";
-use Lotgd\Pvp;
+
 
 Translator::getInstance()->setSchema("inn");
 
@@ -30,11 +36,11 @@ if ($op == "fleedragon") {
     $session['user']['location'] = $vname;
 }
 
-page_header(["%s", Sanitize::sanitize($iname)]);
+Header::pageHeader(["%s", Sanitize::sanitize($iname)]);
 $skipinndesc = Events::handleEvent("inn");
 
 if (!$skipinndesc) {
-    checkday();
+    DateTime::checkDay();
     $output->rawOutput("<span style='color: #9900FF'>");
     $output->outputNotl("`c`b");
     $output->output($iname);
@@ -46,11 +52,10 @@ $subop = Http::get('subop');
 $com = Http::get('comscroll');
 $comment = Http::post('insertcommentary');
 
-require_once __DIR__ . "/lib/partner.php";
-$partner = get_partner();
-addnav("Other");
+$partner = Partner::getPartner();
+Nav::add("Other");
 VillageNav::render();
-addnav("I?Return to the Inn", "inn.php");
+Nav::add("I?Return to the Inn", "inn.php");
 
 switch ($op) {
     case "":
@@ -74,4 +79,4 @@ if (!$skipinndesc) {
     $output->rawOutput("</span>");
 }
 
-page_footer();
+Footer::pageFooter();

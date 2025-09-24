@@ -167,9 +167,9 @@ class Footer
             'stats'   => $statsOutput,
             'script'  => $script,
             'motd'    => $motd_link,
-            //'source'  => "<a href='$sourcelink' onclick=\"" . PageParts::popup($sourcelink) . ";return false;\" target='_blank'>" . Translator::translateInline('View PHP Source') . '</a>',
+            'source'  => "<a href='$sourcelink' onclick=\"" . PageParts::popup($sourcelink) . ";return false;\" target='_blank'>" . Translator::translateInline('View PHP Source') . '</a>',
             'version' => 'Version: ' . $page->getLogdVersion(),
-            //'pagegen' => PageParts::computePageGenerationStats(PhpGenericEnvironment::getPageStartTime()),
+            'pagegen' => PageParts::computePageGenerationStats(PhpGenericEnvironment::getPageStartTime()),
             'copyright' => $page->{$page->getV()}(),
         ];
         if (TwigTemplate::isActive()) {

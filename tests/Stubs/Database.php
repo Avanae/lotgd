@@ -12,6 +12,7 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
     class Database
     {
         public static array $settings_table = [];
+        public static array $settings_extended_table = [];
         public static int $onlineCounter = 0;
         public static int $affected_rows = 0;
         public static string $lastSql = '';
@@ -25,6 +26,7 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
         public static ?object $doctrineConnection = null;
         public static ?object $instance = null;
         public static array $queryCacheResults = [];
+        public static string $tablePrefix = '';
         /**
          * Queue of mock results returned by {@see query} for unit tests.
          * Each call to {@see query} will shift the next entry.
@@ -51,14 +53,18 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
             return self::getInstance()->selectDb($dbname);
         }
 
-        public static function prefix(string $name, bool $force = false): string
+        public static function prefix(string $name, string|false|null $force = null): string
         {
-            return $name;
+            if ($force !== null && $force !== false) {
+                return $force . $name;
+            }
+
+            return self::$tablePrefix . $name;
         }
 
         public static function setPrefix(string $prefix): void
         {
-            // Intentionally left blank for tests.
+            self::$tablePrefix = $prefix;
         }
 
         public static function error(): string
@@ -66,17 +72,17 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
             return self::$instance && method_exists(self::$instance, 'error') ? self::$instance->error() : self::$last_error;
         }
 
-    /**
-     * Executes a database query and returns the result.
-     *
-     * @param string $sql The SQL query to execute.
-     * @param bool   $die Whether to terminate execution on error (default: true).
-     *
-     * @return array|null Returns an array of results for SELECT queries.
-     *                    Returns null if no results are found or for non-SELECT queries.
-     *                    Returns a boolean (true/false) for certain operations (e.g., success/failure).
-     *                    Returns a string in specific cases (e.g., error messages or debug information).
-     */
+        /**
+         * Executes a database query and returns the result.
+         *
+         * @param string $sql The SQL query to execute.
+         * @param bool   $die Whether to terminate execution on error (default: true).
+         *
+         * @return array|null Returns an array of results for SELECT queries.
+         *                    Returns null if no results are found or for non-SELECT queries.
+         *                    Returns a boolean (true/false) for certain operations (e.g., success/failure).
+         *                    Returns a string in specific cases (e.g., error messages or debug information).
+         */
         public static function query(string $sql, bool $die = true): array|bool|object|string|null
         {
             global $accounts_table, $mail_table, $last_query_result;
@@ -214,6 +220,13 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
                 return $last_query_result;
             }
 
+            if (preg_match("/SELECT prefs FROM accounts WHERE acctid='?(\d+)'?/", $sql, $m)) {
+                $acctid = (int) $m[1];
+                $prefs = $accounts_table[$acctid]['prefs'] ?? '';
+                $last_query_result = [['prefs' => $prefs]];
+                return $last_query_result;
+            }
+
             if (strpos($sql, 'SELECT * FROM modules') === 0) {
                 $last_query_result = [];
                 return $last_query_result;
@@ -282,16 +295,21 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
             }
 
             if (preg_match('/SELECT \* FROM (.+)/', $sql, $m)) {
-                if ($m[1] === 'settings') {
+                $table = $m[1];
+                if ($table === 'settings' || $table === 'settings_extended') {
+                    $rows = $table === 'settings'
+                        ? self::$settings_table
+                        : self::$settings_extended_table;
                     $last_query_result = [];
-                    foreach (self::$settings_table as $k => $v) {
+                    foreach ($rows as $k => $v) {
                         $last_query_result[] = ['setting' => $k, 'value' => $v];
                     }
                     return $last_query_result;
                 }
             }
 
-            if (strpos($sql, 'INSERT INTO settings') === 0) {
+            if (preg_match('/INSERT INTO (settings(?:_extended)?) /i', $sql, $tableMatch)) {
+                $table = $tableMatch[1];
                 if (preg_match('/VALUES\s*\(([^,]+),([^\)]+)\)/i', $sql, $m)) {
                     $name  = trim($m[1], "'\" ");
                     $value = trim($m[2], "'\" ");
@@ -299,9 +317,15 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
                     $name = $value = '';
                 }
 
-                $exists   = array_key_exists($name, self::$settings_table);
-                $oldValue = self::$settings_table[$name] ?? null;
-                self::$settings_table[$name] = $value;
+                if ($table === 'settings') {
+                    $target =& self::$settings_table;
+                } else {
+                    $target =& self::$settings_extended_table;
+                }
+
+                $exists   = array_key_exists($name, $target);
+                $oldValue = $target[$name] ?? null;
+                $target[$name] = $value;
 
                 if (!$exists) {
                     self::$affected_rows = 1;
@@ -316,11 +340,18 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
             }
 
             if (preg_match('/UPDATE (.+) SET value=(.+) WHERE setting=(.+)/', $sql, $m)) {
-                if ($m[1] === 'settings') {
+                $table = $m[1];
+                if ($table === 'settings' || $table === 'settings_extended') {
                     $value = trim($m[2], "'\"");
                     $name = trim($m[3], "'\"");
-                    if (isset(self::$settings_table[$name])) {
-                        self::$settings_table[$name] = $value;
+                    if ($table === 'settings') {
+                        $target =& self::$settings_table;
+                    } else {
+                        $target =& self::$settings_extended_table;
+                    }
+
+                    if (isset($target[$name])) {
+                        $target[$name] = $value;
                         self::$affected_rows = 1;
                     } else {
                         self::$affected_rows = 0;
@@ -350,6 +381,10 @@ if (!class_exists(__NAMESPACE__ . '\\Database', false)) {
         public static function fetchAssoc(mixed &$result): mixed
         {
             if (is_array($result)) {
+                if (!array_is_list($result)) {
+                    $result = [$result];
+                }
+
                 return array_shift($result);
             }
 

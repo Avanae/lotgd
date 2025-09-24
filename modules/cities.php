@@ -4,14 +4,22 @@ declare(strict_types=1);
 
 use Lotgd\Translator;
 use Lotgd\Mounts;
+
+/**
+ * Core module handling multiple cities and travel events.
+ */
+
+// translator ready
+// addnews ready
+// mail ready
 use Lotgd\MySQL\Database;
 
 function cities_getmoduleinfo(): array
 {
     $info = array(
         "name" => "Multiple Cities",
-        "version" => "1.2",
-        "author" => " Eric Stevens, modified by MarcTheSlayer",
+        "version" => "1.0",
+        "author" => "Eric Stevens",
         "category" => "Cities",
         "download" => "core_module",
         "allowanonymous" => true,
@@ -62,14 +70,26 @@ function cities_install(): bool
 
 function cities_uninstall(): bool
 {
+    global $session;
+
     // This is semi-unsafe -- If a player is in the process of a page
     // load it could get the location, uninstall the cities and then
     // save their location from their session back into the database
     // I think I have a patch however :)
     $city = getsetting("villagename", LOCATION_FIELDS);
     $inn = getsetting("innname", LOCATION_INN);
-    $sql = "UPDATE " . Database::prefix("accounts") . " SET location='" . addslashes($city) . "' WHERE location!='" . addslashes($inn) . "'";
-    Database::query($sql);
+
+    $conn = Database::getDoctrineConnection();
+    $accounts = Database::prefix("accounts");
+
+    $conn->executeStatement(
+        "UPDATE {$accounts} SET location = :city WHERE location <> :inn",
+        [
+            'city' => $city,
+            'inn' => $inn,
+        ]
+    );
+
     $session['user']['location'] = $city;
     return true;
 }
@@ -97,14 +117,14 @@ function cities_dohook(string $hookname, array $args): array
             }
             break;
         case "count-travels":
-            $args['available'] = ($args['available'] ?? 0) + get_module_setting("allowance");
+            $args['available'] += get_module_setting("allowance");
             $mount = Mounts::getInstance()->getPlayerMount();
             if ($mount && isset($mount['mountid'])) {
                 $id    = $mount['mountid'];
                 $extra = get_module_objpref("mounts", $id, "extratravel");
                 $args['available'] += $extra;
             }
-            $args['used'] = ($args['used'] ?? 0) + get_module_pref("traveltoday");
+            $args['used'] += get_module_pref("traveltoday");
             break;
         case "cities-usetravel":
             global $session;

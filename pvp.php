@@ -2,40 +2,44 @@
 
 declare(strict_types=1);
 
+use Lotgd\AddNews;
+use Lotgd\Battle;
+use Lotgd\DateTime;
+use Lotgd\Http;
+use Lotgd\Modules\HookHandler;
+use Lotgd\Nav;
+use Lotgd\Nav\VillageNav;
+use Lotgd\Output;
+use Lotgd\Page\Footer;
+use Lotgd\Page\Header;
+use Lotgd\Pvp;
+use Lotgd\Settings;
 use Lotgd\Translator;
 
 // translator ready
 // addnews ready
 // mail ready
 require_once __DIR__ . "/common.php";
-use Lotgd\FightNav;
-use Lotgd\Pvp;
-use Lotgd\Battle;
-use Lotgd\AddNews;
-use Lotgd\Nav;
-use Lotgd\Nav\VillageNav;
-use Lotgd\Http;
-use Lotgd\Output;
-
 
 Translator::getInstance()->setSchema("pvp");
 
-$output = Output::getInstance();
-$iname = getsetting("innname", LOCATION_INN);
+$output   = Output::getInstance();
+$settings = Settings::getInstance();
+$iname    = $settings->getSetting("innname", LOCATION_INN);
 $battle = false;
 
-page_header("PvP Combat!");
+Header::pageHeader("PvP Combat!");
 $op = Http::get('op');
 $act = Http::get('act');
 
 if ($op == "" && $act != "attack") {
-    checkday();
+    DateTime::checkDay();
         Pvp::warn();
     $args = array(
         'atkmsg' => '`4You head out to the fields, where you know some unwitting warriors are sleeping.`n`nYou have `^%s`4 PvP fights left for today.`n`n',
         'schemas' => array('atkmsg' => 'pvp')
     );
-    $args = modulehook("pvpstart", $args);
+    $args = HookHandler::hook("pvpstart", $args);
     Translator::getInstance()->setSchema($args['schemas']['atkmsg']);
     $output->output($args['atkmsg'], $session['user']['playerfights']);
     Translator::getInstance()->setSchema();
@@ -135,4 +139,4 @@ if ($battle) {
                 Battle::fightnav(false, false, "pvp.php$extra");
     }
 }
-page_footer();
+Footer::pageFooter();

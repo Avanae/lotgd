@@ -10,6 +10,7 @@ use Lotgd\Nav;
 use Lotgd\Page\Header;
 use Lotgd\Page\Footer;
 use Lotgd\Http;
+use Lotgd\Modules\HookHandler;
 
 // translator ready
 // addnews ready
@@ -31,7 +32,7 @@ if ($op == "" || $op == "sql") {
     $sql = (string) Http::post('sql');
     if ($sql != "") {
         $sql = stripslashes($sql);
-        modulehook("rawsql-execsql", array("sql" => $sql));
+        HookHandler::hook("rawsql-execsql", array("sql" => $sql));
         $r = Database::query($sql, false);
         if (!$r) {
             $output->output("`\$SQL Error:`& %s`0`n`n", Database::error($r));
@@ -67,8 +68,8 @@ if ($op == "" || $op == "sql") {
     }
 
     $output->output("Type your query");
-    $execute = translate_inline("Execute");
-    $ret = modulehook("rawsql-modsql", array("sql" => $sql));
+    $execute = Translator::translate("Execute");
+    $ret = HookHandler::hook("rawsql-modsql", array("sql" => $sql));
     $sql = $ret['sql'];
     $output->rawOutput("<form action='rawsql.php' method='post'>");
     $output->rawOutput("<textarea name='sql' class='input' cols='60' rows='10'>" . htmlentities($sql, ENT_COMPAT, getsetting("charset", "UTF-8")) . "</textarea><br>");
@@ -77,21 +78,21 @@ if ($op == "" || $op == "sql") {
     Nav::add('', 'rawsql.php');
 } else {
     $php = stripslashes((string) Http::post('php'));
-    $source = translate_inline("Source:");
-    $execute = translate_inline("Execute");
+    $source = Translator::translate("Source:");
+    $execute = Translator::translate("Execute");
     if ($php > "") {
         $output->rawOutput("<div style='background-color: #FFFFFF; color: #000000; width: 100%'><b>$source</b><br>");
         $output->rawOutput(highlight_string("<?php\n$php\n?>", true));
         $output->rawOutput("</div>");
         $output->output("`bResults:`b`n");
-        modulehook("rawsql-execphp", array("php" => $php));
+        HookHandler::hook("rawsql-execphp", array("php" => $php));
         ob_start();
         eval($php);
         $output->output(ob_get_contents(), true);
         ob_end_clean();
     }
     $output->output("`n`nType your code:");
-    $ret = modulehook("rawsql-modphp", array("php" => $php));
+    $ret = HookHandler::hook("rawsql-modphp", array("php" => $php));
     $php = $ret['php'];
     $output->rawOutput("<form action='rawsql.php?op=php' method='post'>");
     $output->rawOutput("&lt;?php<br><textarea name='php' class='input' cols='60' rows='10'>" . htmlentities($php, ENT_COMPAT, getsetting("charset", "UTF-8")) . "</textarea><br>?&gt;<br>");

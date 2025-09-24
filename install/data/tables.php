@@ -95,7 +95,7 @@ function get_all_tables()
             'name' => 'armorvalue', 'type' => 'int(11) unsigned', 'default' => '0' //price of the armour
             ),
         'location' => array(
-            'name' => 'location', 'type' => 'varchar(50)', 'default' => 'Varrock' //location he is in
+            'name' => 'location', 'type' => 'varchar(50)', 'default' => 'Degolburg' //location he is in
             ),
         'turns' => array(
             'name' => 'turns', 'type' => 'int(11) unsigned', 'default' => '10' //amount of turns he has

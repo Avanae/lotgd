@@ -14,6 +14,8 @@ Everything below reflects the path from 1.3.2 → 2.0 RCs.
 - Remove legacy settings stub and streamline cron handling.
 - Expanded logging: game log entries can include account IDs, user management and module lifecycle actions, and anonymous entries show a system label.
 - Account cleanup now runs inside a database transaction for safer deletions.
+- Mail delivery helpers expose PHPMailer error details so admin tools can surface actionable diagnostics.
+- Add "Test SMTP settings" action to `configuration.php` to send a diagnostics email.
 
 
 ### Bug Fixes
@@ -24,6 +26,9 @@ Everything below reflects the path from 1.3.2 → 2.0 RCs.
 - Add unsuspend buff wrappers and seed default navigation for new characters.
 - Normalize withdraw log category to lowercase.
 - Show system label for anonymous gamelog entries and record account IDs in maintenance logs.
+- Show "Deleted User" placeholder when reading mail from deleted accounts instead of erroring.
+- Extend the template preference cookie to one year to prevent theme resets.
+- Cast equipment editor and hidden field values to strings to avoid PHP type errors on listings.
 
 
 ### Refactor
@@ -103,7 +108,7 @@ These enhancements significantly improve code quality, developer trust, and long
 - **Doctrine ORM + Migrations** integration.
 - **Doctrine DBAL** used across core.
 - Added `migrations/` tree with upgrade paths.
-- PHP **8.4 baseline** documented.
+- PHP **8.3 baseline** documented.
 
 ### Refactor
 - Broad PSR-4 namespacing (`Lotgd\...`).
@@ -150,7 +155,7 @@ These enhancements significantly improve code quality, developer trust, and long
 ### Refactor / Architecture
 - Composer-first, PSR-4 namespaces (`Lotgd\...`).
 - Doctrine DBAL + ORM + migrations.
-- PHP 8.4 baseline.
+- PHP 8.3 baseline.
 - New config structure (`src/Lotgd/Config`).
 - Async code moved to dedicated directories.
 
@@ -178,7 +183,7 @@ These enhancements significantly improve code quality, developer trust, and long
 - Namespacing and strict typing throughout.
 - Doctrine migrations required; legacy upgrade first.
 - Async endpoints rewritten for Jaxon.
-- PHP 8.4 minimum version.
+- PHP 8.3 minimum version.
 
 ---
 

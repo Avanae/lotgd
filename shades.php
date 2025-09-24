@@ -1,10 +1,14 @@
 <?php
 
 use Lotgd\Commentary;
-use Lotgd\Translator;
-use Lotgd\Output;
+use Lotgd\Modules\HookHandler;
+use Lotgd\DateTime;
 use Lotgd\Nav;
+use Lotgd\Output;
+use Lotgd\Page\Footer;
+use Lotgd\Page\Header;
 use Lotgd\Redirect;
+use Lotgd\Translator;
 
 // translator ready
 // addnews ready
@@ -14,9 +18,9 @@ $output = Output::getInstance();
 
 Translator::getInstance()->setSchema("shades");
 
-page_header("Land of the Shades");
+Header::pageHeader("Land of the Shades");
 Commentary::addCommentary();
-checkday();
+DateTime::checkDay();
 
 if ($session['user']['alive']) {
     Redirect::redirect("village.php");
@@ -35,7 +39,7 @@ Nav::add("The Graveyard", "graveyard.php");
 
 Nav::add("Return to the news", "news.php");
 
-modulehook("shades", array()); // if this is too low, you can use footer-shades...
+HookHandler::hook("shades", array()); // if this is too low, you can use footer-shades...
 
 Commentary::commentDisplay("`n`QNearby, some lost souls lament:`n", "shade", "Despair", 25, "despairs");
 
@@ -64,4 +68,4 @@ if ($session['user']['superuser'] & SU_INFINITE_DAYS) {
 
 Translator::getInstance()->setSchema();
 
-page_footer();
+Footer::pageFooter();

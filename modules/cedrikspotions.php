@@ -4,7 +4,7 @@ function cedrikspotions_getmoduleinfo(){
 	$info = array(
 		"name"=>"The Apothecary",
 		"version"=>"1.0",
-		"author"=>"Jeffrey Hofman",
+		"author"=>"`7J`te`7f`tf`7r`te`7y `tH`7o`te`7g`te`7e `&",
 		"category"=>"Inn",
 		"download"=>"core_module",
 		"settings"=>array(

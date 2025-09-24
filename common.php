@@ -1,6 +1,7 @@
 <?php
 
 use Lotgd\Translator;
+
 require_once __DIR__ . '/autoload.php';
 
 use Lotgd\BootstrapErrorHandler;
@@ -27,6 +28,7 @@ use Lotgd\DateTime;
 use Lotgd\Cookies;
 use Lotgd\ErrorHandler;
 use Lotgd\Page;
+use Lotgd\Modules\HookHandler;
 
 BootstrapErrorHandler::register();
 // translator ready
@@ -42,7 +44,7 @@ BootstrapErrorHandler::register();
 //      name at the end indicating which parts are copyright by you.
 // Eg:
 // Copyright 2002-2004, Game: Eric Stevens & JT Traub, modified by Your Name
-$copyright = "Game Design and Code: Copyright &copy; 2002-2005, Eric Stevens & JT Traub, &copy; 2006-2007, Dragonprime Development Team <span class='colDkRed'> &copy 2007-? Oliver Brendel & Jeffrey van Geresteijn remodelling and enhancing</span>";
+$copyright = "Game Design and Code: Copyright &copy; 2002-2005, Eric Stevens & JT Traub, &copy; 2006-2007, Dragonprime Development Team <span class='colDkRed'> &copy 2007-? Oliver Brendel remodelling and enhancing</span>";
 Page::getInstance()->setCopyright($copyright);
 // **** NOTICE ****
 // This series of scripts (collectively known as Legend of the Green Dragon
@@ -57,9 +59,8 @@ Page::getInstance()->setCopyright($copyright);
 // license must be used on the distribution of any works derived from this
 // work.  This license text may not be removed nor altered in any way.
 // Please see the file LICENSE for a full textual description of the license.
-//$license = "\n<!-- Creative Commons License -->\n<a rel='license' href='http://creativecommons.org/licenses/by-nc-sa/2.0/' target='_blank'><img clear='right' align='left' alt='Creative Commons License' border='0' src='images/somerights20.gif' /></a>\nThis work is licensed under a <a rel='license' href='http://creativecommons.org/licenses/by-nc-sa/2.0/' target='_blank'>Creative Commons License</a>.<br />\n<!-- /Creative Commons License -->\n<!--\n  <rdf:RDF xmlns='http://web.resource.org/cc/' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n	<Work rdf:about=''>\n	  <dc:type rdf:resource='http://purl.org/dc/dcmitype/Interactive' />\n	  <license rdf:resource='http://creativecommons.org/licenses/by-nc-sa/2.0/' />\n	</Work>\n	<License rdf:about='http://creativecommons.org/licenses/by-nc-sa/2.0/'>\n	  <permits rdf:resource='http://web.resource.org/cc/Reproduction' />\n	  <permits rdf:resource='http://web.resource.org/cc/Distribution' />\n	  <requires rdf:resource='http://web.resource.org/cc/Notice' />\n	  <requires rdf:resource='http://web.resource.org/cc/Attribution' />\n	  <prohibits rdf:resource='http://web.resource.org/cc/CommercialUse' />\n	  <permits rdf:resource='http://web.resource.org/cc/DerivativeWorks' />\n	  <requires rdf:resource='http://web.resource.org/cc/ShareAlike' />\n	</License>\n  </rdf:RDF>\n-->\n";
-$license = "";
-    // .... NOTICE *****
+$license = "\n<!-- Creative Commons License -->\n<a rel='license' href='http://creativecommons.org/licenses/by-nc-sa/2.0/' target='_blank'><img clear='right' align='left' alt='Creative Commons License' border='0' src='images/somerights20.gif' /></a>\nThis work is licensed under a <a rel='license' href='http://creativecommons.org/licenses/by-nc-sa/2.0/' target='_blank'>Creative Commons License</a>.<br />\n<!-- /Creative Commons License -->\n<!--\n  <rdf:RDF xmlns='http://web.resource.org/cc/' xmlns:dc='http://purl.org/dc/elements/1.1/' xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n	<Work rdf:about=''>\n	  <dc:type rdf:resource='http://purl.org/dc/dcmitype/Interactive' />\n	  <license rdf:resource='http://creativecommons.org/licenses/by-nc-sa/2.0/' />\n	</Work>\n	<License rdf:about='http://creativecommons.org/licenses/by-nc-sa/2.0/'>\n	  <permits rdf:resource='http://web.resource.org/cc/Reproduction' />\n	  <permits rdf:resource='http://web.resource.org/cc/Distribution' />\n	  <requires rdf:resource='http://web.resource.org/cc/Notice' />\n	  <requires rdf:resource='http://web.resource.org/cc/Attribution' />\n	  <prohibits rdf:resource='http://web.resource.org/cc/CommercialUse' />\n	  <permits rdf:resource='http://web.resource.org/cc/DerivativeWorks' />\n	  <requires rdf:resource='http://web.resource.org/cc/ShareAlike' />\n	</License>\n  </rdf:RDF>\n-->\n";
+// .... NOTICE *****
 // This series of scripts (collectively known as Legend of the Green Dragon
 // or LotGD) is licensed according to the Creating Commons Attribution
 // Non-commercial Share-alike license.  The terms of this license must be
@@ -68,7 +69,7 @@ $license = "";
 // work.  This license text may not be removed nor altered in any way.
 // Please see the file LICENSE for a full textual description of the license.
 
-$logd_version = "1.0.0 Gielinor Edition";
+$logd_version = "2.0.0-rc +nb Edition";
 Page::getInstance()->setLogdVersion($logd_version);
 
 // Include some commonly needed and useful routines
@@ -105,6 +106,7 @@ require_once __DIR__ . "/lib/mounts.php";
 require_once __DIR__ . "/lib/debuglog.php";
 require_once __DIR__ . "/lib/datacache.php";
 require_once __DIR__ . "/lib/fightnav.php";
+require_once __DIR__ . "/lib/villagenav.php";
 
 ErrorHandler::register();
 
@@ -254,9 +256,9 @@ if ($link === false) {
                 //I won't, because all people can use it //Oliver
                 //Yet made a bit more interesting text than just the naughty normal "Unable to connect to database - sorry it didn't work out" stuff
                 $notified = false;
-        if (file_exists("lib/smsnotify.php")) {
+        if (file_exists("config/smsnotify.php")) {
                 $smsmessage = "No DB Server: " . Database::error();
-                require_once __DIR__ . "/lib/smsnotify.php";
+                require_once __DIR__ . "/config/smsnotify.php";
                 $notified = true;
         }
                 // And tell the user it died.  No translation here, we need the DB for
@@ -293,9 +295,9 @@ if (!defined("DB_NODB")) {
     if (!DB_CONNECTED || !@Database::selectDb($config['DB_NAME'])) {
         if ((!defined('IS_INSTALLER') || (defined('IS_INSTALLER') && !IS_INSTALLER)) && DB_CONNECTED) {
             // Ignore this bit.  It's only really for Eric's server or people that want to trigger something when the database is jerky
-            if (file_exists("lib/smsnotify.php")) {
+            if (file_exists("config/smsnotify.php")) {
                                 $smsmessage = "Cant Attach to DB: " . Database::error();
-                require_once __DIR__ . "/lib/smsnotify.php";
+                require_once __DIR__ . "/config/smsnotify.php";
                 $notified = true;
             }
             // And tell the user it died.  No translation here, we need the DB for
@@ -335,9 +337,9 @@ if (!defined('IS_INSTALLER') || (defined('IS_INSTALLER') && !IS_INSTALLER)) {
     $settings = new Settings('settings');
 }
 
-//if (isset($settings) && $logd_version == $settings->getSetting("installer_version", "-1")) {
-//    define("IS_INSTALLER", false);
-//}
+if (isset($settings) && $logd_version == $settings->getSetting("installer_version", "-1")) {
+    define("IS_INSTALLER", false);
+}
 
 $charset = isset($settings) ? $settings->getSetting('charset', 'UTF-8') : 'UTF-8';
 
@@ -412,8 +414,7 @@ if (!isset($nokeeprestore[$scriptNameEnv]) || !$nokeeprestore[$scriptNameEnv]) {
 }
 
 
-
-if (isset($settings) != $settings->getSetting('installer_version', '-1') && (!defined('IS_INSTALLER') || (defined('IS_INSTALLER') && !IS_INSTALLER))) {
+if (isset($settings) && $logd_version != $settings->getSetting('installer_version', '-1') && (!defined('IS_INSTALLER') || (defined('IS_INSTALLER') && !IS_INSTALLER))) {
     if (!AJAX_MODE) {
             Header::pageHeader("Upgrade Needed");
             output("`#The game is temporarily unavailable while a game upgrade is applied, please be patient, the upgrade will be completed soon.");
@@ -425,7 +426,7 @@ if (isset($settings) != $settings->getSetting('installer_version', '-1') && (!de
             Footer::pageFooter();
     }
         define("NO_SAVE_USER", true);
-} elseif (isset($settings) == $settings->getSetting("installer_version", "-1")  && file_exists('installer.php') && basename($_SERVER['SCRIPT_NAME']) !== 'installer.php') {
+} elseif (isset($settings) && $logd_version == $settings->getSetting("installer_version", "-1")  && file_exists('installer.php') && basename($_SERVER['SCRIPT_NAME']) !== 'installer.php') {
         // here we have a nasty situation. The installer file exists (ready to be used to get out of any bad situation like being defeated etc and it is no upgrade or new installation. It MUST be deleted
     if (!AJAX_MODE) {
             Header::pageHeader("Major Security Risk");
@@ -434,29 +435,6 @@ if (isset($settings) != $settings->getSetting('installer_version', '-1') && (!de
             Footer::pageFooter();
     }
 }
-
-// Returning game version as required
-//if (isset($settings) && $logd_version != $settings->getSetting('installer_version', '-1') && (!defined('IS_INSTALLER') || (defined('IS_INSTALLER') && !IS_INSTALLER))) {
-//    if (!AJAX_MODE) {
-//            Header::pageHeader("Upgrade Needed");
-//            output("`#The game is temporarily unavailable while a game upgrade is applied, please be patient, the upgrade will be completed soon.");
-//            output("In order to perform the upgrade, an admin will have to run through the installer.");
-//        output("If you are an admin, please <a href='installer.php'>visit the Installer</a> and complete the upgrade process.`n`n", true);
-//            output("`@If you don't know what this all means, just sit tight, we're doing an upgrade and will be done soon, you will be automatically returned to the game when the upgrade is complete.");
-//            rawoutput("<meta http-equiv='refresh' content='30; url={$session['user']['restorepage']}'>");
-//        Nav::add("Installer (Admins only!)", "installer.php");
-//            Footer::pageFooter();
-//    }
-//        define("NO_SAVE_USER", true);
-//} elseif (isset($settings) && $logd_version == $settings->getSetting("installer_version", "-1")  && file_exists('installer.php') && basename($_SERVER['SCRIPT_NAME']) !== 'installer.php') {
-//        // here we have a nasty situation. The installer file exists (ready to be used to get out of any bad situation like being defeated etc and it is no upgrade or new installation. It MUST be deleted
-//    if (!AJAX_MODE) {
-//            Header::pageHeader("Major Security Risk");
-//        output("`\$Remove the file named 'installer.php' from your main game directory! You need to comply in order to get the game up and running.");
-//            Nav::add("Home", "index.php");
-//            Footer::pageFooter();
-//    }
-//}
 
 
 if (isset($session['user']['hitpoints']) && $session['user']['hitpoints'] > 0) {
@@ -610,13 +588,13 @@ if (
 
 // After setup, allow modification of colors and nested tags
 $output = \Lotgd\Output::getInstance();
-$colors = modulehook("core-colors", $output->getColors());
+$colors = HookHandler::hook("core-colors", $output->getColors());
 $output->setColors($colors);
 // and nested tag handling
-$nestedtags = modulehook("core-nestedtags", $output->getNestedTags());
+$nestedtags = HookHandler::hook("core-nestedtags", $output->getNestedTags());
 $output->setNestedTags($nestedtags);
 // and nested tag eval
-$nestedeval = modulehook("core-nestedtags-eval", $output->getNestedTagEval());
+$nestedeval = HookHandler::hook("core-nestedtags-eval", $output->getNestedTagEval());
 $output->setNestedTagEval($nestedeval);
 
 
@@ -628,5 +606,5 @@ $output->setNestedTagEval($nestedeval);
 // You should do as LITTLE as possible here and consider if you can hook on
 // a page header instead.
 if (!defined('IS_INSTALLER') || (defined('IS_INSTALLER') && !IS_INSTALLER)) {
-    modulehook('everyhit');
+    HookHandler::hook('everyhit');
 }

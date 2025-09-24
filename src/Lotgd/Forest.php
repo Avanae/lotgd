@@ -57,7 +57,7 @@ class Forest
                 }
             }
             if ($isforest || count($vloc) == 0) {
-                Navigation::add('G?`@Seek Out Elvarg', 'forest.php?op=dragon');
+                Navigation::add('G?`@Seek Out the Green Dragon', 'forest.php?op=dragon');
             }
         }
         if (!$noshowmessage) {

@@ -244,13 +244,41 @@ class Installer
                     SU_VIEW_SOURCE | SU_NEVER_EXPIRE;
                     $name = Http::post("name");
                     $pass = md5(md5(stripslashes(Http::post("pass1"))));
-                    $sql = "DELETE FROM " . Database::prefix("accounts") . " WHERE login='$name'";
-                    Database::query($sql);
-                    $sql = "INSERT INTO " . Database::prefix("accounts") . " (login,password,superuser,name,playername,ctitle,title,regdate,badguy,companions, allowednavs, restorepage, bufflist, dragonpoints, prefs, donationconfig,specialinc,specialmisc,emailaddress,replaceemail,emailvalidation,hauntedby,bio) VALUES('$name','$pass',$su,'`%Admin `&$name`0','`%Admin `&$name`0','`%Admin','', NOW(),'','','','village.php','','','','','','','','','')";
-                    $result = Database::query($sql);
-                    if (Database::affectedRows($result) == 0) {
-                        print_r($sql);
-                        die("Failed to create Admin account. Your first check should be to make sure that MYSQL (if that is your type) is not in strict mode.");
+                    $connection = Database::getDoctrineConnection();
+                    $table = Database::prefix("accounts");
+                    $connection->delete($table, ['login' => $name]);
+
+                    $displayName = '`%Admin `&' . $name . '`0';
+                    $regdate = date('Y-m-d H:i:s');
+
+                    $inserted = $connection->insert($table, [
+                        'login'           => $name,
+                        'password'        => $pass,
+                        'superuser'       => $su,
+                        'name'            => $displayName,
+                        'playername'      => $displayName,
+                        'ctitle'          => '`%Admin',
+                        'title'           => '',
+                        'regdate'         => $regdate,
+                        'badguy'          => '',
+                        'companions'      => '',
+                        'allowednavs'     => serialize(['village.php' => true]),
+                        'restorepage'     => 'village.php',
+                        'bufflist'        => '',
+                        'dragonpoints'    => '',
+                        'prefs'           => '',
+                        'donationconfig'  => '',
+                        'specialinc'      => '',
+                        'specialmisc'     => '',
+                        'emailaddress'    => '',
+                        'replaceemail'    => '',
+                        'emailvalidation' => '',
+                        'hauntedby'       => '',
+                        'bio'             => '',
+                    ]);
+
+                    if ($inserted <= 0) {
+                        throw new \RuntimeException("Failed to create Admin account. Your first check should be to make sure that MYSQL (if that is your type) is not in strict mode.");
                     }
                     $this->output->output("`^Your superuser account has been created as `%Admin `&$name`^!");
                     $this->saveSetting("installer_version", $logd_version);
@@ -800,6 +828,7 @@ class Installer
     public function stage6(): void
     {
         global $session, $logd_version, $recommended_modules, $noinstallnavs, $stage, $DB_USEDATACACHE;
+        $success = false;
         if (file_exists("dbconnect.php")) {
             $success = true;
             $initial = false;
@@ -862,7 +891,8 @@ class Installer
                 $this->output->output("`2Create a new file, past the entire contents from above into it (everything from and including `3<?php`2 up to and including `3?>`2 ).");
                 $this->output->output("When you have that done, save the file as 'dbconnect.php' and upload this to the location you have LoGD at.");
                 $this->output->output("You can refresh this page to see if you were successful.");
-            } else {
+            }
+            if (! $failure) {
                 $success = true;
             }
         }
@@ -871,38 +901,72 @@ class Installer
             $sub = substr($version, 0, 5);
             $sub = (int)str_replace(".", "", $sub);
             if ($sub < 110) {
-                        $assignments = [];
-                        $fp = fopen('dbconnect.php', 'r+');
-                if ($fp) {
-                    while (!feof($fp)) {
-                        $buffer = fgets($fp, 4096);
-                        if (strpos($buffer, '$DB') !== false && preg_match('/\$(DB_[A-Z_]+)\s*=\s*([^;]*);/', $buffer, $matches)) {
-                            $assignments[$matches[1]] = trim($matches[2], " \t\"'");
-                        }
+                $dbconnectFile = 'dbconnect.php';
+                $assignments = [];
+                $legacyAssignmentsFound = false;
+                $config = null;
+
+                if (file_exists($dbconnectFile)) {
+                    try {
+                        /** @psalm-suppress UnresolvableInclude */
+                        $config = require $dbconnectFile;
+                    } catch (\Throwable) {
+                        $config = null;
                     }
-                    fclose($fp);
+
+                    if (is_array($config)) {
+                        $assignments = $config;
+                    }
                 }
-                $dbconnect =
-                    "<?php\n"
-                    . "//This file automatically created by installer.php on " . date("M d, Y h:i a") . "\n"
-                    . "return [\n"
-                    . "    'DB_HOST' => '" . ($assignments['DB_HOST'] ?? '') . "',\n"
-                    . "    'DB_USER' => '" . ($assignments['DB_USER'] ?? '') . "',\n"
-                    . "    'DB_PASS' => '" . ($assignments['DB_PASS'] ?? '') . "',\n"
-                    . "    'DB_NAME' => '" . ($assignments['DB_NAME'] ?? '') . "',\n"
-                    . "    'DB_PREFIX' => '" . ($assignments['DB_PREFIX'] ?? '') . "',\n"
-                    . "    'DB_USEDATACACHE' => " . ((int)($assignments['DB_USEDATACACHE'] ?? 0)) . ",\n"
-                    . "    'DB_DATACACHEPATH' => " . var_export($assignments['DB_DATACACHEPATH'] ?? '', true) . ",\n"
-                    . "];\n";
-                // Check if the file is writeable for us. If yes, we will change the file and notice the admin
-                // if not, they have to change the file themselves...
-                        $failure = false;
-                        $dir = dirname('dbconnect.php');
-                if (is_writable($dir)) {
-                        $fp = fopen('dbconnect.php', 'w+');
+
+                if (! is_array($config)) {
+                    $fp = fopen($dbconnectFile, 'r');
                     if ($fp) {
-                        if (fwrite($fp, $dbconnect) !== false) {
-                            $this->output->output("`n`@Success!`2  I was able to write your dbconnect.php file.");
+                        while (($buffer = fgets($fp, 4096)) !== false) {
+                            if (strpos($buffer, '$DB') !== false && preg_match('/\$(DB_[A-Z_]+)\s*=\s*([^;]*);/', $buffer, $matches)) {
+                                $legacyAssignmentsFound = true;
+                                $assignments[$matches[1]] = trim($matches[2], " \t\"'");
+                            }
+                        }
+                        fclose($fp);
+                    }
+                }
+
+                if (is_array($config) || ! $legacyAssignmentsFound) {
+                    $this->output->output("`n`^You are ready for the next step.");
+                } else {
+                    $dbconnect =
+                        "<?php\n" .
+                        "//This file automatically created by installer.php on " . date("M d, Y h:i a") . "\n" .
+                        "return [\n" .
+                        "    'DB_HOST' => '" . ($assignments['DB_HOST'] ?? '') . "',\n" .
+                        "    'DB_USER' => '" . ($assignments['DB_USER'] ?? '') . "',\n" .
+                        "    'DB_PASS' => '" . ($assignments['DB_PASS'] ?? '') . "',\n" .
+                        "    'DB_NAME' => '" . ($assignments['DB_NAME'] ?? '') . "',\n" .
+                        "    'DB_PREFIX' => '" . ($assignments['DB_PREFIX'] ?? '') . "',\n" .
+                        "    'DB_USEDATACACHE' => " . ((int)($assignments['DB_USEDATACACHE'] ?? 0)) . ",\n" .
+                        "    'DB_DATACACHEPATH' => " . var_export($assignments['DB_DATACACHEPATH'] ?? '', true) . ",\n" .
+                        "];\n";
+                    // Check if the file is writeable for us. If yes, we will change the file and notice the admin
+                    // if not, they have to change the file themselves...
+                    $failure = false;
+                    $dir = dirname($dbconnectFile);
+                    if (is_writable($dir)) {
+                        $fp = fopen($dbconnectFile, 'w+');
+                        if ($fp) {
+                            if (fwrite($fp, $dbconnect) !== false) {
+                                $this->output->output("`n`@Success!`2  I was able to write your dbconnect.php file.");
+                            } else {
+                                $failure = true;
+                                $err = error_get_last();
+                                if ($err) {
+                                    if (!\Lotgd\Installer\InstallerLogger::log($err['message'])) {
+                                        $this->output->output("`^Could not write install log (`2%s`^)`n", \Lotgd\Installer\InstallerLogger::getLogFilePath());
+                                    }
+                                    $this->output->output("`n`\$Failed to write to dbconnect.php:`2 %s", $err['message']);
+                                }
+                            }
+                            fclose($fp);
                         } else {
                             $failure = true;
                             $err = error_get_last();
@@ -910,33 +974,24 @@ class Installer
                                 if (!\Lotgd\Installer\InstallerLogger::log($err['message'])) {
                                     $this->output->output("`^Could not write install log (`2%s`^)`n", \Lotgd\Installer\InstallerLogger::getLogFilePath());
                                 }
-                                    $this->output->output("`n`\$Failed to write to dbconnect.php:`2 %s", $err['message']);
+                                $this->output->output("`n`\$Failed to create dbconnect.php:`2 %s", $err['message']);
                             }
                         }
-                                fclose($fp);
                     } else {
-                            $failure = true;
-                            $err = error_get_last();
-                        if ($err) {
-                            if (!\Lotgd\Installer\InstallerLogger::log($err['message'])) {
-                                $this->output->output("`^Could not write install log (`2%s`^)`n", \Lotgd\Installer\InstallerLogger::getLogFilePath());
-                            }
-                                    $this->output->output("`n`\$Failed to create dbconnect.php:`2 %s", $err['message']);
-                        }
-                    }
-                } else {
                         $failure = true;
                         $this->output->output("`n`\$Directory not writable:`2 %s", $dir);
-                }
-                if ($failure) {
-                    $this->output->output("`2With this new version the settings for datacaching had to be moved to `idbconnect.php`i.");
-                    $this->output->output("Due to your system settings and privleges for this file, I was not able to perform the changes by myself.");
-                    $this->output->output("This part involves you: We have to ask you to replace the content of your existing `idbconnect.php`i with the following code:`n`n`&");
-                    $this->output->rawOutput("<blockquote><pre>" . htmlentities($dbconnect, ENT_COMPAT, $this->getSetting("charset", "UTF-8")) . "</pre></blockquote>");
-                    $this->output->output("`2This will let you use your existing datacaching settings.`n`n");
-                    $this->output->output("If you have done this, you are ready for the next step.");
-                } else {
-                    $this->output->output("`n`^You are ready for the next step.");
+                    }
+
+                    if ($failure) {
+                        $this->output->output("`2With this new version the settings for datacaching had to be moved to `idbconnect.php`i.");
+                        $this->output->output("Due to your system settings and privleges for this file, I was not able to perform the changes by myself.");
+                        $this->output->output("This part involves you: We have to ask you to replace the content of your existing `idbconnect.php`i with the following code:`n`n`&");
+                        $this->output->rawOutput("<blockquote><pre>" . htmlentities($dbconnect, ENT_COMPAT, $this->getSetting("charset", "UTF-8")) . "</pre></blockquote>");
+                        $this->output->output("`2This will let you use your existing datacaching settings.`n`n");
+                        $this->output->output("If you have done this, you are ready for the next step.");
+                    } else {
+                        $this->output->output("`n`^You are ready for the next step.");
+                    }
                 }
             } else {
                 $this->output->output("`n`^You are ready for the next step.");
@@ -1046,7 +1101,7 @@ class Installer
         $this->output->output("For the most part, modules are independant of each other, meaning that one module can be installed, uninstalled, activated, and deactivated without negative impact on the rest of the game.");
         $this->output->output("Not all modules are ideal for all sites, for example, there's a module called 'Multiple Cities,' which is intended only for large sites with many users online at the same time.");
         $this->output->output("`n`n`^If you are not familiar with Legend of the Green Dragon, and how the game is played, it is probably wisest to choose the default set of modules to be installed.");
-        $this->output->output("`n`n`@There is an extensive community of users who write modules for LoGD at <a href='http://dragonprime.net/'>http://dragonprime.net/</a>.", true);
+        $this->output->output("`n`n`@An extensive community of users who write modules for LoGD can be found at <a href='https://dragonprime-reborn.ca/'>https://dragonprime-reborn.ca/</a>.", true);
         $phpram = ini_get("memory_limit");
         if ($this->returnBytes($phpram) < 62582912 && $phpram != -1 && !$session['overridememorylimit'] && !$session['dbinfo']['upgrade']) {// 62 MBytes
                                                                         // enter this ONLY if it's not an upgrade and if the limit is really too low
@@ -1270,11 +1325,38 @@ class Installer
 
         require __DIR__ . '/../data/installer_sqlstatements.php';
         $fromVersion = $session['fromversion'] ?? '-1';
-        foreach ($sql_upgrade_statements as $version => $statements) {
-            $version = (string) $version;
-            if (!($session['dbinfo']['upgrade'] ?? false) || version_compare($version, $fromVersion, '>')) {
-                foreach ($statements as $sql) {
-                    Database::query($sql);
+
+        $creaturesTable = Database::prefix('creatures');
+        $shouldExecuteLegacySql = true;
+
+        try {
+            $countResult = Database::query("SELECT COUNT(*) AS total_count FROM {$creaturesTable}");
+            $row = [];
+
+            if (is_array($countResult)) {
+                $row = $countResult;
+            } elseif ($countResult) {
+                $fetched = Database::fetchAssoc($countResult);
+                if (is_array($fetched)) {
+                    $row = $fetched;
+                }
+            }
+
+            if ($row) {
+                $totalCount = (int) ($row['total_count'] ?? $row['count'] ?? $row['c'] ?? 0);
+                $shouldExecuteLegacySql = ($totalCount === 0);
+            }
+        } catch (\Throwable $exception) {
+            $shouldExecuteLegacySql = true;
+        }
+
+        if ($shouldExecuteLegacySql) {
+            foreach ($sql_upgrade_statements as $version => $statements) {
+                $version = (string) $version;
+                if (!($session['dbinfo']['upgrade'] ?? false) || version_compare($version, $fromVersion, '>')) {
+                    foreach ($statements as $sql) {
+                        Database::query($sql);
+                    }
                 }
             }
         }
@@ -1461,8 +1543,14 @@ class Installer
     {
         global $session, $DB_PREFIX;
 
-        $db        = require dirname(__DIR__, 2) . '/dbconnect.php';
-        $DB_PREFIX = $db['DB_PREFIX'] ?? '';
+        $db           = require dirname(__DIR__, 2) . '/dbconnect.php';
+        $initialPrefix = $DB_PREFIX ?? '';
+        Database::setPrefix($initialPrefix);
+
+        $DB_PREFIX = $db['DB_PREFIX'] ?? $initialPrefix;
+        if ($DB_PREFIX !== $initialPrefix) {
+            Database::setPrefix($DB_PREFIX);
+        }
         InstallerLogger::log('DB_PREFIX set to ' . $DB_PREFIX);
 
         $config = require dirname(__DIR__, 2) . '/src/Lotgd/Config/migrations.php';
@@ -1470,7 +1558,7 @@ class Installer
         $em = Bootstrap::getEntityManager();
 
         $dependencyFactory = DependencyFactory::fromEntityManager(
-            new ConfigurationArray(['migrations_paths' => $config['migrations_paths']]),
+            new ConfigurationArray($config),
             new ExistingEntityManager($em)
         );
 

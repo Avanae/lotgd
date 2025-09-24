@@ -15,13 +15,13 @@ use Lotgd\Translator;
 use Lotgd\Buffs;
 use Lotgd\Battle;
 use Lotgd\Substitute;
+use Lotgd\Http;
+use Lotgd\Modules\HookHandler;
 
 // translator ready
 // addnews ready
 // mail ready
-require_once __DIR__ . "/lib/bell_rand.php";
 require_once __DIR__ . "/common.php";
-require_once __DIR__ . "/lib/http.php";
 
 
 //just in case we're called from within a function.Yuck is this ugly.
@@ -61,7 +61,7 @@ $roundcounter = 0;
 $adjustment = 1;
 
 $count = 1;
-$auto = httpget('auto');
+$auto = Http::get('auto');
 if ($auto == 'full') {
     $count = -1;
 } elseif ($auto == 'five') {
@@ -72,10 +72,10 @@ if ($auto == 'full') {
 $enemycounter = count($enemies);
 $enemies = Battle::autoSetTarget($enemies);
 
-$op = httpget("op");
-$skill = httpget("skill");
-$l = httpget("l");
-$newtarget = httpget('newtarget');
+$op = Http::get("op");
+$skill = Http::get("skill");
+$l = Http::get("l");
+$newtarget = Http::get('newtarget');
 if ($newtarget != "") {
     $op = "newtarget";
 }
@@ -119,7 +119,7 @@ foreach ($enemies as $index => $enemy) {
 
 if ($enemycounter > 0) {
     output("`\$`c`b~ ~ ~ Fight ~ ~ ~`b`c`0");
-    modulehook("battle", $enemies);
+    HookHandler::hook("battle", $enemies);
     foreach ($enemies as $index => $badguy) {
         if ($badguy['creaturehealth'] > 0 && $session['user']['hitpoints'] > 0) {
             output("`@You have encountered `^%s`@ which lunges at you with `%%s`@!`0`n", $badguy['creaturename'], $badguy['creatureweapon']);
@@ -137,7 +137,7 @@ Battle::suspendBuffs((($options['type'] == 'pvp') ? "allowinpvp" : false));
 Battle::suspendCompanions((($options['type'] == 'pvp') ? "allowinpvp" : false));
 
 // Now that the bufflist is sane, see if we should add in the bodyguard.
-$inn = (int)httpget('inn');
+$inn = (int)Http::get('inn');
 if ($options['type'] == 'pvp' && $inn == 1) {
     Battle::applyBodyguard($badguy['bodyguardlevel']);
 }
@@ -154,7 +154,7 @@ if ($op != "run" && $op != "fight" && $op != "newtarget") {
             // By default, surprise is 50/50
             $surprised = e_rand(0, 1) ? true : false;
             // Now, adjust for slum/thrill
-            $type = httpget('type');
+            $type = Http::get('type');
             if ($type == 'slum' || $type == 'thrill') {
                 $num = e_rand(0, 2);
                 $surprised = true;
@@ -428,7 +428,7 @@ if ($op != "newtarget") {
                     if (getsetting("instantexp", false) == true && $session['user']['alive'] && $options['type'] != "pvp" && $options['type'] != "train") {
                         if (!isset($badguy['expgained']) || $badguy['expgained'] == false) {
                             $cr_xp_gain = round($badguy['creatureexp'] / count($newenemies));
-                            $args = modulehook("forest-victory-xp", $args = array('experience' => $cr_xp_gain));
+                            $args = HookHandler::hook("forest-victory-xp", $args = array('experience' => $cr_xp_gain));
                             $cr_xp_gain = $args['experience'];
                             $session['user']['experience'] += $cr_xp_gain;
                             if (isset($badguy['creatureexp'])) {
@@ -569,10 +569,10 @@ if ($victory || $defeat) {
             $badguy['type'] = $options['type'];
 
             if ($victory) {
-                $badguy = modulehook("battle-victory", $badguy);
+                $badguy = HookHandler::hook("battle-victory", $badguy);
             }
             if ($defeat) {
-                $badguy = modulehook("battle-defeat", $badguy);
+                $badguy = HookHandler::hook("battle-defeat", $badguy);
             }
 //          unset($badguy['fightoutput']);
         }

@@ -4,11 +4,6 @@ declare(strict_types=1);
 
 use Lotgd\MySQL\Database;
 use Lotgd\Translator;
-
-// addnews ready
-// translator ready
-// mail ready
-define("ALLOW_ANONYMOUS", true);
 use Lotgd\Http;
 use Lotgd\Page\Header;
 use Lotgd\Page\Footer;
@@ -16,8 +11,16 @@ use Lotgd\Nav\VillageNav;
 use Lotgd\Nav;
 use Lotgd\DateTime;
 use Lotgd\Output;
+use Lotgd\Modules\HookHandler;
+use Lotgd\Settings;
+
+// addnews ready
+// translator ready
+// mail ready
+define("ALLOW_ANONYMOUS", true);
 
 require_once __DIR__ . "/common.php";
+$settings = Settings::getInstance();
 $output = Output::getInstance();
 
 Translator::getInstance()->setSchema("list");
@@ -54,6 +57,8 @@ $page = Http::get('page');
 $search = '';
 $limit = '';
 
+$loginTimeout = (int) $settings->getSetting('LOGINTIMEOUT', 900);
+
 if ($op == "search") {
     $rawName = Http::post('name');
     $n = '';
@@ -84,7 +89,8 @@ if ($op !== "search") {
 
     $limit = " LIMIT $pageoffset,$playersperpage ";
 }
-if (getsetting('listonlyonline', 1) == 0 || (getsetting('listonlyonline', 1) == 1 && $session['user']['loggedin'])) {
+$listOnlyOnline = (int) $settings->getSetting('listonlyonline', 1);
+if ($listOnlyOnline === 0 || ($listOnlyOnline === 1 && $session['user']['loggedin'])) {
     Nav::add("Pages");
     for ($i = 0; $i < $totalplayers; $i += $playersperpage) {
         $pnum = $i / $playersperpage + 1;
@@ -100,8 +106,8 @@ if (getsetting('listonlyonline', 1) == 0 || (getsetting('listonlyonline', 1) == 
 // wouldn't show up
 $remove_offline = true;
 if ($page == "" && $op == "") {
-    $title = translate_inline("Warriors Currently Online");
-    $sql = "SELECT acctid,name,login,alive,location,race,sex,level,laston,loggedin,lastip,uniqueid FROM " . Database::prefix("accounts") . " WHERE locked=0 AND loggedin=1 AND laston>'" . date("Y-m-d H:i:s", strtotime("-" . getsetting("LOGINTIMEOUT", 900) . " seconds")) . "' ORDER BY level DESC, dragonkills DESC, login ASC";
+    $title = Translator::translate("Warriors Currently Online");
+    $sql = "SELECT acctid,name,login,alive,location,race,sex,level,laston,loggedin,lastip,uniqueid FROM " . Database::prefix("accounts") . " WHERE locked=0 AND loggedin=1 AND laston>'" . date("Y-m-d H:i:s", strtotime("-" . $loginTimeout . " seconds")) . "' ORDER BY level DESC, dragonkills DESC, login ASC";
     $result = Database::queryCached($sql, "list.php-warsonline");
 } elseif ($op == 'clan') {
     if (empty($session['user']['clanid'])) {
@@ -110,8 +116,8 @@ if ($page == "" && $op == "") {
     }
     $clanId = (int) $session['user']['clanid'];
 
-    $title = translate_inline("Clan Members Online");
-    $sql = "SELECT acctid,name,login,alive,location,race,sex,level,laston,loggedin,lastip,uniqueid FROM " . Database::prefix("accounts") . " WHERE locked=0 AND loggedin=1 AND laston>'" . date("Y-m-d H:i:s", strtotime("-" . getsetting("LOGINTIMEOUT", 900) . " seconds")) . "' AND clanid='{$clanId}' ORDER BY level DESC, dragonkills DESC, login ASC";
+    $title = Translator::translate("Clan Members Online");
+    $sql = "SELECT acctid,name,login,alive,location,race,sex,level,laston,loggedin,lastip,uniqueid FROM " . Database::prefix("accounts") . " WHERE locked=0 AND loggedin=1 AND laston>'" . date("Y-m-d H:i:s", strtotime("-" . $loginTimeout . " seconds")) . "' AND clanid='{$clanId}' ORDER BY level DESC, dragonkills DESC, login ASC";
     $result = Database::query($sql);
 } else {
     $remove_offline = false;
@@ -125,17 +131,18 @@ if ($page == "" && $op == "") {
     $result = Database::query($sql);
 }
 if ($session['user']['loggedin']) {
-    $search = translate_inline("Search by name: ");
-    $search2 = translate_inline("Search");
+    $search = Translator::translate("Search by name: ");
+    $search2 = Translator::translate("Search");
 
     $output->rawOutput("<form action='list.php?op=search' method='POST'>$search<input name='name'><input type='submit' class='button' value='$search2'></form>");
     Nav::add("", "list.php?op=search");
 }
 
 $max = Database::numRows($result);
-if ($max > getsetting("maxlistsize", 100)) {
-    $output->output("`\$Too many names match that search.  Showing only the first %s.`0`n", getsetting("maxlistsize", 100));
-    $max = getsetting("maxlistsize", 100);
+$maxListSize = (int) $settings->getSetting('maxlistsize', 100);
+if ($max > $maxListSize) {
+    $output->output("`\$Too many names match that search.  Showing only the first %s.`0`n", $maxListSize);
+    $max = $maxListSize;
 }
 
 // prepare for hook
@@ -147,7 +154,7 @@ while ($row = Database::fetchAssoc($result)) {
 $rows = array_slice($rows, 0, $max);
 
 // let modules modify the data before we display it
-$rows = modulehook("warriorlist", $rows);
+$rows = HookHandler::hook("warriorlist", $rows);
 
 if ($page == "" && $op == "") {
     // Count how many warriors are online by the loggedin field in the $rows array
@@ -161,20 +168,20 @@ if ($page == "" && $op == "") {
 }
 $output->outputNotl("`c`b" . $title . "`b");
 
-$alive = translate_inline("Alive");
-$level = translate_inline("Level");
-$name = translate_inline("Name");
-$loc = translate_inline("Location");
-$race = translate_inline("Race");
-$sex = translate_inline("Sex");
-$last = translate_inline("Last On");
+$alive = Translator::translate("Alive");
+$level = Translator::translate("Level");
+$name = Translator::translate("Name");
+$loc = Translator::translate("Location");
+$race = Translator::translate("Race");
+$sex = Translator::translate("Sex");
+$last = Translator::translate("Last On");
 
 $output->rawOutput("<table border=0 cellpadding=2 cellspacing=1 bgcolor='#999999'>", true);
 $output->rawOutput("<tr class='trhead'><td>$alive</td><td>$level</td><td>$name</td><td>$loc</td><td>$race</td><td>$sex</td><td>$last</tr>");
-$writemail = translate_inline("Write Mail");
-$alive = translate_inline("`1Yes`0");
-$dead = translate_inline("`4No`0");
-$unconscious = translate_inline("`6Unconscious`0");
+$writemail = Translator::translate("Write Mail");
+$alive = Translator::translate("`1Yes`0");
+$dead = Translator::translate("`4No`0");
+$unconscious = Translator::translate("`6Unconscious`0");
 
 foreach ($rows as $i => $row) {
     if ($remove_offline === true && !$row['loggedin']) {
@@ -188,7 +195,7 @@ foreach ($rows as $i => $row) {
     } else {
         $a = $dead;
     }
-    //$a = translate_inline($row['alive']?"`1Yes`0":"`4No`0");
+    //$a = Translator::translate($row['alive']?"`1Yes`0":"`4No`0");
     $output->outputNotl("%s", $a);
     $output->rawOutput("</td><td>");
     $output->outputNotl("`^%s`0", $row['level']);
@@ -204,10 +211,10 @@ foreach ($rows as $i => $row) {
         $output->rawOutput("</a>");
     }
     $output->rawOutput("</td><td>");
-    $loggedin = (date("U") - strtotime($row['laston']) < getsetting("LOGINTIMEOUT", 900) && $row['loggedin']);
+    $loggedin = (date("U") - strtotime($row['laston']) < $loginTimeout && $row['loggedin']);
     $output->outputNotl("`&%s`0", $row['location']);
     if ($loggedin) {
-        $online = translate_inline("`#(Online)");
+        $online = Translator::translate("`#(Online)");
         $output->outputNotl("%s", $online);
     }
     $output->rawOutput("</td><td>");
@@ -218,7 +225,7 @@ foreach ($rows as $i => $row) {
     $output->output($row['race']);
     Translator::getInstance()->setSchema();
     $output->rawOutput("</td><td>");
-    $sex = translate_inline($row['sex'] ? "`%Female`0" : "`!Male`0");
+    $sex = Translator::translate($row['sex'] ? "`%Female`0" : "`!Male`0");
     $output->outputNotl("%s", $sex);
     $output->rawOutput("</td><td>");
     $laston = DateTime::relativeDate($row['laston']);

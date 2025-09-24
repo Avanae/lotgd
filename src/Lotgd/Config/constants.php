@@ -66,7 +66,7 @@ myDefine("CLAN_FOUNDER", 31);
 
 //Location Constants
 myDefine("LOCATION_FIELDS", "Degolburg");
-myDefine("LOCATION_INN", "Blue Moon Inn");
+myDefine("LOCATION_INN", "The Boar's Head Inn");
 
 //Gender Constants
 myDefine("SEX_MALE", 0);

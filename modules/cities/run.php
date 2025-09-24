@@ -6,40 +6,39 @@ declare(strict_types=1);
  * Handles travel events between cities.
  */
 
-use Lotgd\FightNav;
+use Doctrine\DBAL\ParameterType;
 use Lotgd\Battle;
 use Lotgd\Forest\Outcomes;
 use Lotgd\MySQL\Database;
 
-    $op = httpget("op");
+        $op = httpget("op");
     $cityParam = httpget('city');
     // Default to an empty string when the parameter is missing
     $city      = urldecode($cityParam === false ? '' : $cityParam);
     $continue = httpget("continue");
     $danger = httpget("d");
     $su = httpget("su");
-    if ($op != "faq") {
-        require_once("lib/forcednavigation.php");
-        do_forced_nav(false, false);
-    }
+if ($op != "faq") {
+    require_once("lib/forcednavigation.php");
+    do_forced_nav(false, false);
+}
 
+    // I really don't like this being out here, but it has to be since
+    // events can define their own op=.... and we might need to handle them
+    // otherwise things break.
     require_once("lib/events.php");
-
-    if ($session['user']['specialinc'] != "" || httpget("eventhandler")) {
-
-    $eventUrl = "runmodule.php?module=cities&city=" . urlencode($city) . "&d=$danger&continue=1&";
-    $in_event = handle_event("travel", $eventUrl, true); // bool voor needHeader
-
+if ($session['user']['specialinc'] != "" || httpget("eventhandler")) {
+    $in_event = handle_event(
+        "travel",
+        "runmodule.php?module=cities&city=" . urlencode($city) . "&d=$danger&continue=1&",
+        true
+    );
     if ($in_event) {
-        // Page header apart aanroepen, titel "Travel"
-        page_header("Travel");
-
-        // Voeg een "Continue" navigatie toe
         addnav("Continue", "runmodule.php?module=cities&op=travel&city=" . urlencode($city) . "&d=$danger&continue=1");
-
-        // Toon de events
-        module_display_events("travel", $eventUrl);
-
+        module_display_events(
+            "travel",
+            "runmodule.php?module=cities&city=" . urlencode($city) . "&d=$danger&continue=1"
+        );
         page_footer();
     }
 }
@@ -74,14 +73,18 @@ if ($op == "travel") {
     } else {
         if ($continue != "1" && $su != "1" && !get_module_pref("paidcost")) {
             set_module_pref("paidcost", 1);
-            $httpcost = httpget('cost');
-            $cost = modulehook("travel-cost", array("from" => $session['user']['location'],"to" => $city,"cost" => 0));
-            $cost = max(1, $cost['cost'], $httpcost);
+            $httpCost = (int) httpget('cost');
+            $hookResult = modulehook(
+                "travel-cost",
+                array("from" => $session['user']['location'], "to" => $city, "cost" => 0)
+            );
+            $hookCost = (int) ($hookResult['cost'] ?? 0);
+            $cost = (int) max(1, $hookCost, $httpCost);
             $reallyfree = $free - $cost;
             if ($reallyfree > 0) {
                 // Only increment travel used if they are still within
                 // their allowance.
-                increment_module_pref("traveltoday", $cost);
+                increment_module_pref("traveltoday", (int) $cost);
                 //do nothing, they're within their travel allowance.
             } elseif ($session['user']['turns'] + $free > 0) {
                 $over = abs($reallyfree);
@@ -97,7 +100,9 @@ if ($op == "travel") {
         if (e_rand(0, 100) < $dlevel && $su != '1') {
             //they've been waylaid.
 
-            if (module_events("travel", (int)get_module_setting("travelspecialchance"), "runmodule.php?module=cities&city=" . urlencode($city) . "&d=$danger&continue=1&") != 0) {
+            $chance = (int) get_module_setting('travelspecialchance');
+
+            if (module_events("travel", $chance, "runmodule.php?module=cities&city=" . urlencode($city) . "&d=$danger&continue=1&") != 0) {
                 page_header("Something Special!");
                 if (checknavs()) {
                     page_footer();
@@ -120,10 +125,17 @@ if ($op == "travel") {
             $args = array("soberval" => 0.9,
                     "sobermsg" => "`&Facing your bloodthirsty opponent, the adrenaline rush helps to sober you up slightly.", "schema" => "module-cities");
                             modulehook("soberup", $args);
-            $sql = "SELECT * FROM " . Database::prefix("creatures") . " WHERE creaturelevel = '{$session['user']['level']}' AND forest = 1 ORDER BY rand(" . e_rand() . ") LIMIT 1";
-            $result = Database::query($sql);
+            $conn = Database::getDoctrineConnection();
+            $table = Database::prefix('creatures');
+            $sql = "SELECT * FROM {$table} WHERE creaturelevel = :level AND forest = 1 ORDER BY rand(" . e_rand() . ") LIMIT 1";
+            $result = $conn->executeQuery(
+                $sql,
+                ['level' => (int) $session['user']['level']],
+                ['level' => ParameterType::INTEGER]
+            );
             restore_buff_fields();
-            if (Database::numRows($result) == 0) {
+            $creature = $result->fetchAssociative();
+            if (! $creature) {
                 // There is nothing in the database to challenge you,
                 // let's give you a doppleganger.
                 $badguy = ['diddamage' => 0];
@@ -138,7 +150,7 @@ if ($op == "travel") {
                 $badguy['creatureattack'] = $session['user']['attack'];
                 $badguy['creaturedefense'] = $session['user']['defense'];
             } else {
-                $badguy = Database::fetchAssoc($result);
+                $badguy = $creature;
                 $aiscriptfile = "scripts/" . $badguy['creatureaiscript'] . ".php";
                 if (file_exists($aiscriptfile)) {
                     //file there, get content and put it into the ai script field.

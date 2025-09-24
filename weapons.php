@@ -1,26 +1,31 @@
 <?php
 
+use Lotgd\DateTime;
 use Lotgd\MySQL\Database;
 use Lotgd\Translator;
+use Lotgd\Nav;
+use Lotgd\Nav\VillageNav;
+use Lotgd\Page\Header;
+use Lotgd\Page\Footer;
+use Lotgd\Http;
+use Lotgd\Modules\HookHandler;
 
 // translator ready
 // addnews ready
 // mail ready
 require_once __DIR__ . "/common.php";
-require_once __DIR__ . "/lib/http.php";
-require_once __DIR__ . "/lib/villagenav.php";
 
 $translator = Translator::getInstance();
 
 $translator->setSchema("weapon");
 
-checkday();
+DateTime::checkDay();
 $tradeinvalue = round(($session['user']['weaponvalue'] * .75), 0);
 $basetext = array(
     "title"         =>  "MightyE's Weapons",
     "desc"          =>  array(
         "`!MightyE `7stands behind a counter and appears to pay little attention to you as you enter, but you know from experience that he has his eye on every move you make.",
-        array("He may be a humble weapons merchant, but he still carries himself with the grace of a man who has used his weapons to kill mightier %s than you.`n`n",translate_inline($session['user']['sex'] ? "women" : "men")),
+        array("He may be a humble weapons merchant, but he still carries himself with the grace of a man who has used his weapons to kill mightier %s than you.`n`n", Translator::translate($session['user']['sex'] ? "women" : "men")),
         "The massive hilt of a claymore protrudes above his shoulder; its gleam in the torch light not much brighter than the gleam off of `!MightyE's`7 bald forehead, kept shaved mostly as a strategic advantage, but in no small part because nature insisted that some level of baldness was necessary.`n`n",
         "`!MightyE`7 finally nods to you, stroking his goatee and looking like he wished he could have an opportunity to use one of these weapons.",
     ),
@@ -47,24 +52,24 @@ $schemas = array(
 );
 
 $basetext['schemas'] = $schemas;
-$texts = modulehook("weaponstext", $basetext);
+$texts = HookHandler::hook("weaponstext", $basetext);
 $schemas = $texts['schemas'];
 
 $translator->setSchema($schemas['title']);
-page_header($texts['title']);
-output("`c`b`&" . $texts['title'] . "`0`b`c");
+Header::pageHeader($texts['title']);
+$output->output("`c`b`&" . $texts['title'] . "`0`b`c");
 $translator->setSchema();
 
-$op = httpget("op");
+$op = Http::get("op");
 
 if ($op == "") {
     $translator->setSchema($schemas['desc']);
     if (is_array($texts['desc'])) {
         foreach ($texts['desc'] as $description) {
-            output_notl($translator->sprintfTranslate($description));
+            $output->outputNotl($translator->sprintfTranslate($description));
         }
     } else {
-        output($texts['desc']);
+        $output->output($texts['desc']);
     }
     $translator->setSchema();
 
@@ -79,88 +84,88 @@ if ($op == "") {
     $translator->setSchema($schemas['tradein']);
     if (is_array($texts['tradein'])) {
         foreach ($texts['tradein'] as $description) {
-            output_notl($translator->sprintfTranslate($description));
+            $output->outputNotl($translator->sprintfTranslate($description));
         }
     } else {
-        output($texts['tradein']);
+        $output->output($texts['tradein']);
     }
     $translator->setSchema();
 
-    $wname = translate_inline("`bName`b");
-    $wdam = translate_inline("`bDamage`b");
-    $wcost = translate_inline("`bCost`b");
-    rawoutput("<table border='0' cellpadding='0'>");
-    rawoutput("<tr class='trhead'><td>");
-    output_notl($wname);
-    rawoutput("</td><td align='center'>");
-    output_notl($wdam);
-    rawoutput("</td><td align='right'>");
-    output_notl($wcost);
-    rawoutput("</td></tr>");
+    $wname = Translator::translate("`bName`b");
+    $wdam = Translator::translate("`bDamage`b");
+    $wcost = Translator::translate("`bCost`b");
+    $output->rawOutput("<table border='0' cellpadding='0'>");
+    $output->rawOutput("<tr class='trhead'><td>");
+    $output->outputNotl($wname);
+    $output->rawOutput("</td><td align='center'>");
+    $output->outputNotl($wdam);
+    $output->rawOutput("</td><td align='right'>");
+    $output->outputNotl($wcost);
+    $output->rawOutput("</td></tr>");
     $i = 0;
     while ($row = Database::fetchAssoc($result)) {
         $link = true;
-        $row = modulehook("modify-weapon", $row);
+        $row = HookHandler::hook("modify-weapon", $row);
         if (isset($row['skip']) && $row['skip'] === true) {
             continue;
         }
         if (isset($row['unavailable']) && $row['unavailable'] == true) {
             $link = false;
         }
-        rawoutput("<tr class='" . ($i % 2 == 1 ? "trlight" : "trdark") . "'><td>");
+        $output->rawOutput("<tr class='" . ($i % 2 == 1 ? "trlight" : "trdark") . "'><td>");
         $color = "`)";
         if ($row['value'] <= ($session['user']['gold'] + $tradeinvalue)) {
             if ($link) {
                 $color = "`&";
-                rawoutput("<a href='weapons.php?op=buy&id={$row['weaponid']}'>");
+                $output->rawOutput("<a href='weapons.php?op=buy&id={$row['weaponid']}'>");
             } else {
                 $color = "`7";
             }
-            output_notl("%s%s`0", $color, $row['weaponname']);
+            $output->outputNotl("%s%s`0", $color, $row['weaponname']);
             if ($link) {
-                rawoutput("</a>");
+                $output->rawOutput("</a>");
             }
-            addnav("", "weapons.php?op=buy&id={$row['weaponid']}");
+            Nav::add("", "weapons.php?op=buy&id={$row['weaponid']}");
         } else {
-            output_notl("%s%s`0", $color, $row['weaponname']);
-            addnav("", "weapons.php?op=buy&id={$row['weaponid']}");
+            $output->outputNotl("%s%s`0", $color, $row['weaponname']);
+            Nav::add("", "weapons.php?op=buy&id={$row['weaponid']}");
         }
-        rawoutput("</td><td align='center'>");
-        output_notl("%s%s`0", $color, $row['damage']);
-        rawoutput("</td><td align='right'>");
+        $output->rawOutput("</td><td align='center'>");
+        $output->outputNotl("%s%s`0", $color, $row['damage']);
+        $output->rawOutput("</td><td align='right'>");
         if (isset($row['alternatetext']) && $row['alternatetext'] > "") {
-            output("%s%s`0", $color, $row['alternatetext']);
+            $output->output("%s%s`0", $color, $row['alternatetext']);
         } else {
-            output_notl("%s%s`0", $color, $row['value']);
+            $output->outputNotl("%s%s`0", $color, $row['value']);
         }
-        rawoutput("</td></tr>");
+        $output->rawOutput("</td></tr>");
         ++$i;
     }
-    rawoutput("</table>");
-    villagenav();
+    $output->rawOutput("</table>");
+    VillageNav::render();
 } elseif ($op == "buy") {
-    $id = httpget("id");
+    $id = Http::get("id");
     $sql = "SELECT * FROM " . Database::prefix("weapons") . " WHERE weaponid='$id'";
     $result = Database::query($sql);
     if (Database::numRows($result) == 0) {
         $translator->setSchema($schemas['nosuchweapon']);
-        output($texts['nosuchweapon']);
+        $output->output($texts['nosuchweapon']);
         $translator->setSchema();
         $translator->setSchema($schemas['tryagain']);
-        addnav($texts['tryagain'], "weapons.php");
+        Nav::add($texts['tryagain'], "weapons.php");
         $translator->setSchema();
-        villagenav();
+        VillageNav::render();
     } else {
         $row = Database::fetchAssoc($result);
-        $row = modulehook("modify-weapon", $row);
+        $row = HookHandler::hook("modify-weapon", $row);
         if ($row['value'] > ($session['user']['gold'] + $tradeinvalue)) {
             $translator->setSchema($schemas['notenoughgold']);
-            output($texts['notenoughgold'], $row['weaponname']);
+            $output->output($texts['notenoughgold'], $row['weaponname']);
             $translator->setSchema();
-            villagenav();
+            VillageNav::render();
         } else {
             $translator->setSchema($schemas['payweapon']);
-            output($texts['payweapon'], $session['user']['weapon'], $row['weaponname']);
+            $output->output($texts['payweapon'], $session['user']['weapon'], $row['weaponname']);
             $translator->setSchema();
             debuglog("spent " . ($row['value'] - $tradeinvalue) . " gold on the " . $row['weaponname'] . " weapon");
             $session['user']['gold'] -= $row['value'];
@@ -170,9 +175,9 @@ if ($op == "") {
             $session['user']['weapondmg'] = $row['damage'];
             $session['user']['attack'] += $session['user']['weapondmg'];
             $session['user']['weaponvalue'] = $row['value'];
-            villagenav();
+            VillageNav::render();
         }
     }
 }
 
-page_footer();
+Footer::pageFooter();

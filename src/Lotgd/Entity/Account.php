@@ -102,7 +102,7 @@ class Account
     private int $armorvalue = 0;
 
     /** @ORM\Column(type="string", length=50) */
-    private string $location = 'Varrock';
+    private string $location = 'Degolburg';
 
     /** @ORM\Column(type="integer", options={"unsigned":true}) */
     private int $turns = 10;

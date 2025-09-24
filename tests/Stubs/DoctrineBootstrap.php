@@ -32,10 +32,23 @@ class DoctrineConnection
 {
     public array $queries = [];
     public array $params = ['charset' => 'utf8mb4'];
+    /** @var array<int,int> */
+    public array $countResults = [];
+    public array $lastInsert = [];
+    public array $lastDelete = [];
 
     public function executeQuery(string $sql): DoctrineResult
     {
         $this->queries[] = $sql;
+        if (stripos($sql, 'count(') !== false) {
+            $value = array_shift($this->countResults);
+            if ($value === null) {
+                $value = 0;
+            }
+
+            return new DoctrineResult([["total_count" => $value]]);
+        }
+
         return new DoctrineResult([["ok" => true]]);
     }
 
@@ -48,6 +61,40 @@ class DoctrineConnection
     public function executeStatement(string $sql, array $params = []): int
     {
         $this->queries[] = $sql;
+        return 1;
+    }
+
+    public function delete(string $table, array $criteria, array $types = []): int
+    {
+        $this->lastDelete = [
+            'table'    => $table,
+            'criteria' => $criteria,
+            'types'    => $types,
+        ];
+
+        $conditions = [];
+        foreach ($criteria as $column => $_value) {
+            $conditions[] = $column . ' = ?';
+        }
+
+        $where = $conditions ? implode(' AND ', $conditions) : '1 = 1';
+        $this->queries[] = sprintf('DELETE FROM %s WHERE %s', $table, $where);
+
+        return 1;
+    }
+
+    public function insert(string $table, array $data, array $types = []): int
+    {
+        $this->lastInsert = [
+            'table' => $table,
+            'data'  => $data,
+            'types' => $types,
+        ];
+
+        $columns      = implode(', ', array_keys($data));
+        $placeholders = implode(', ', array_fill(0, count($data), '?'));
+        $this->queries[] = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, $columns, $placeholders);
+
         return 1;
     }
 

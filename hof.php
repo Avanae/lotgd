@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 use Lotgd\MySQL\Database;
 use Lotgd\Translator;
-// translator ready
-// addnews ready
-// mail ready
-
-// New Hall of Fame features by anpera
-// http://www.anpera.net/forum/viewforum.php?f=27
-
 use Lotgd\Http;
 use Lotgd\Page\Header;
 use Lotgd\Page\Footer;
 use Lotgd\Nav\VillageNav;
 use Lotgd\Nav;
 use Lotgd\DateTime;
+use Lotgd\Modules\HookHandler;
+// translator ready
+// addnews ready
+// mail ready
+
+// New Hall of Fame features by anpera
+// http://www.anpera.net/forum/viewforum.php?f=27
 
 require_once __DIR__ . "/common.php";
 
@@ -79,7 +79,7 @@ Nav::add("Sorting");
 Nav::add("Best", "hof.php?op=$op&subop=most&page=$page");
 Nav::add("Worst", "hof.php?op=$op&subop=least&page=$page");
 Nav::add("Other Stats");
-modulehook("hof-add", array());
+HookHandler::hook("hof-add", array());
 if ($totalplayers > $playersperpage) {
     Nav::add("Pages");
     for ($i = 0; $i < $totalplayers; $i += $playersperpage) {
@@ -105,24 +105,24 @@ function display_table(
 ) {
     global $session, $from, $to, $page, $playersperpage, $totalplayers, $output;
 
-    $title = translate_inline($title);
+    $title = Translator::translate($title);
     if ($foot !== false) {
-        $foot = translate_inline($foot);
+        $foot = Translator::translate($foot);
     }
     if ($none !== false) {
-        $none = translate_inline($none);
+        $none = Translator::translate($none);
     } else {
-        $none = translate_inline("No players found.");
+        $none = Translator::translate("No players found.");
     }
     if ($data_header !== false) {
-        $data_header = translate_inline($data_header);
+        $data_header = Translator::translate($data_header);
         reset($data_header);
     }
     if ($tag !== false) {
-        $tag = translate_inline($tag);
+        $tag = Translator::translate($tag);
     }
-    $rank = translate_inline("Rank");
-    $name = translate_inline("Name");
+    $rank = Translator::translate("Rank");
+    $name = Translator::translate("Name");
 
     if ($totalplayers > $playersperpage) {
         $output->output("`c`b`^%s`0`b `7(Page %s: %s-%s of %s)`0`c`n", $title, $page, $from, $to, $totalplayers);
@@ -159,7 +159,7 @@ function display_table(
                         isset($translate[$id]) &&
                             $translate[$id] == 1 && !is_numeric($val)
                     ) {
-                        $val = translate_inline($val);
+                        $val = Translator::translate($val);
                     }
                     if ($tag !== false) {
                         $val = $val . " " . $tag[$j];
@@ -269,7 +269,7 @@ if ($op == "money") {
     $headers = array("Level");
     $table = array($title, $sql, false, false, $headers, false);
 } elseif ($op == "days") {
-    $unk = translate_inline("Unknown");
+    $unk = Translator::translate("Unknown");
     $sql = "SELECT name, IF(bestdragonage,bestdragonage,'$unk') AS data1 FROM " . Database::prefix("accounts") . " WHERE $standardwhere $extra ORDER BY bestdragonage $order, level $order, experience $order, acctid $order LIMIT $limit";
     $me = "SELECT count(acctid) AS count FROM " . Database::prefix("accounts") . " WHERE $standardwhere $extra AND bestdragonage $meop {$session['user']['bestdragonage']}";
     $adverb = "fastest";
@@ -281,7 +281,7 @@ if ($op == "money") {
     $none = "There are no heroes in the land.";
     $table = array($title, $sql, $none, false, $headers, false);
 } else {
-    $unk = translate_inline("Unknown");
+    $unk = Translator::translate("Unknown");
     $sql = "SELECT name,dragonkills AS data1,level AS data2,'&nbsp;' AS data3, IF(dragonage,dragonage,'$unk') AS data4, '&nbsp;' AS data5, IF(bestdragonage,bestdragonage,'$unk') AS data6 FROM " . Database::prefix("accounts") . " WHERE $standardwhere $extra ORDER BY dragonkills $order,level $order,experience $order, acctid $order LIMIT $limit";
     if ($session['user']['dragonkills'] > 0) {
         $me = "SELECT count(acctid) AS count FROM " . Database::prefix("accounts") . " WHERE $standardwhere $extra AND dragonkills $meop {$session['user']['dragonkills']}";

@@ -1,10 +1,18 @@
 <?php
 
 use Lotgd\MySQL\Database;
+use Lotgd\Settings;
 use Lotgd\Translator;
 use Lotgd\Motd;
 use Lotgd\Battle;
 use Lotgd\Output;
+use Lotgd\Nav;
+use Lotgd\Nav\VillageNav;
+use Lotgd\Page\Header;
+use Lotgd\Page\Footer;
+use Lotgd\Http;
+use Lotgd\Modules\HookHandler;
+use Lotgd\DateTime;
 
 // translator ready
 // addnews ready
@@ -12,28 +20,27 @@ use Lotgd\Output;
 define("ALLOW_ANONYMOUS", true);
 require_once __DIR__ . "/common.php";
 $output = Output::getInstance();
-require_once __DIR__ . "/lib/http.php";
-require_once __DIR__ . "/lib/villagenav.php";
+$settings = Settings::getInstance();
 
 $translator = Translator::getInstance();
 
 $translator->setSchema("news");
 
-modulehook("news-intercept", array());
+HookHandler::hook("news-intercept", array());
 
 
 if ($session['user']['loggedin']) {
-    checkday();
+    DateTime::checkDay();
 }
-$newsperpage = 50;
+$newsperpage = (int) $settings->getSetting('newsperpage', 50);
 
-$offset = (int)httpget('offset');
+$offset = (int)Http::get('offset');
 $timestamp = strtotime((0 - $offset) . " days");
 $sql = "SELECT count(newsid) AS c FROM " . Database::prefix("news") . " WHERE newsdate='" . date("Y-m-d", $timestamp) . "'";
 $result = Database::query($sql);
 $row = Database::fetchAssoc($result);
 $totaltoday = $row['c'];
-$page = (int)httpget('page');
+$page = (int)Http::get('page');
 if (!$page) {
     $page = 1;
 }
@@ -44,7 +51,7 @@ if ($pageoffset > 0) {
 $pageoffset *= $newsperpage;
 $sql = "SELECT * FROM " . Database::prefix("news") . " WHERE newsdate='" . date("Y-m-d", $timestamp) . "' ORDER BY newsid DESC LIMIT $pageoffset,$newsperpage";
 $result = Database::query($sql);
-page_header("LoGD News");
+Header::pageHeader("LoGD News");
 $date = date("D, M j, Y", $timestamp);
 
 $pagestr = "";
@@ -60,9 +67,8 @@ if ($totaltoday > $newsperpage) {
 $sql2 = "SELECT " . Database::prefix("motd") . ".*,name AS motdauthorname FROM " . Database::prefix("motd") . " LEFT JOIN " . Database::prefix("accounts") . " ON " . Database::prefix("accounts") . ".acctid = " . Database::prefix("motd") . ".motdauthor ORDER BY motddate DESC LIMIT 1";
 $result2 = Database::queryCached($sql2, "lastmotd");
 while ($row = Database::fetchAssoc($result2)) {
-        require_once __DIR__ . "/lib/nltoappon.php";
     if ($row['motdauthorname'] == "") {
-        $row['motdauthorname'] = translate_inline("`@Green Dragon Staff`0");
+        $row['motdauthorname'] = Translator::translateInline('`@Green Dragon Staff`0');
     }
     if ($row['motdtype'] == 0) {
             Motd::motditem($row['motdtitle'], $row['motdbody'], $output->appoencode($row['motdauthorname']), $row['motddate'], 0);
@@ -76,9 +82,9 @@ $output->output("`c`b`!News for %s %s`0`b`c", $date, $pagestr);
 while ($row = Database::fetchAssoc($result)) {
     $output->outputNotl("`c`2-=-`@=-=`2-=-`@=-=`2-=-`@=-=`2-=-`0`c");
     if ($session['user']['superuser'] & SU_EDIT_COMMENTS) {
-        $del = translate_inline("Del");
+        $del = Translator::translateInline('Del');
         $output->rawOutput("[ <a href='superuser.php?op=newsdelete&newsid=" . $row['newsid'] . "&return=" . URLEncode($_SERVER['REQUEST_URI']) . "'>$del</a> ]&nbsp;");
-        addnav("", "superuser.php?op=newsdelete&newsid={$row['newsid']}&return=" . URLEncode($_SERVER['REQUEST_URI']));
+        Nav::add("", "superuser.php?op=newsdelete&newsid={$row['newsid']}&return=" . URLEncode($_SERVER['REQUEST_URI']));
     }
     $translator->setSchema($row['tlschema']);
     if ($row['arguments'] > "") {
@@ -91,7 +97,7 @@ while ($row = Database::fetchAssoc($result)) {
         $news = $translator->sprintfTranslate(...$arguments);
         $output->rawOutput(Translator::clearButton());
     } else {
-        $news = translate_inline($row['newstext']);
+        $news = Translator::translateInline($row['newstext']);
     }
     $translator->setSchema();
     $output->outputNotl("`c" . $news . "`c`n");
@@ -102,60 +108,60 @@ if (Database::numRows($result) == 0) {
 }
  $output->outputNotl("`c`2-=-`@=-=`2-=-`@=-=`2-=-`@=-=`2-=-`0`c");
 if (!$session['user']['loggedin']) {
-    addnav("Login Screen", "index.php");
+    Nav::add("Login Screen", "index.php");
 } elseif ($session['user']['alive']) {
-    villagenav();
+    VillageNav::render();
 } else {
     $translator->setSchema("nav");
-    addnav("Log Out");
-    addnav("Log out", "login.php?op=logout");
+    Nav::add("Log Out");
+    Nav::add("Log out", "login.php?op=logout");
 
     if ($session['user']['sex'] == 1) {
-        addnav("`!`bYou're dead, Jane!`b`0");
+        Nav::add("`!`bYou're dead, Jane!`b`0");
     } else {
-        addnav("`!`bYou're dead, Jim!`b`0");
+        Nav::add("`!`bYou're dead, Jim!`b`0");
     }
-    addnav("S?Land of Shades", "shades.php");
-    addnav("G?The Graveyard", "graveyard.php");
+    Nav::add("S?Land of Shades", "shades.php");
+    Nav::add("G?The Graveyard", "graveyard.php");
         Battle::suspendCompanions("allowinshades", true);
     $translator->setSchema();
 }
-addnav("News");
-addnav("Previous News", "news.php?offset=" . ($offset + 1));
+Nav::add("News");
+Nav::add("Previous News", "news.php?offset=" . ($offset + 1));
 if ($offset > 0) {
-    addnav("Next News", "news.php?offset=" . ($offset - 1));
+    Nav::add("Next News", "news.php?offset=" . ($offset - 1));
 }
 if ($session['user']['loggedin']) {
-    addnav("Preferences", "prefs.php");
+    Nav::add("Preferences", "prefs.php");
 }
-addnav("About this game", "about.php");
+Nav::add("About this game", "about.php");
 
 $translator->setSchema("nav");
 if ($session['user']['superuser'] & SU_EDIT_COMMENTS) {
-    addnav("Superuser");
-    addnav(",?Comment Moderation", "moderate.php");
+    Nav::add("Superuser");
+    Nav::add(",?Comment Moderation", "moderate.php");
 }
 if ($session['user']['superuser'] & ~SU_DOESNT_GIVE_GROTTO) {
-    addnav("Superuser");
-    addnav("X?Superuser Grotto", "superuser.php");
+    Nav::add("Superuser");
+    Nav::add("X?Superuser Grotto", "superuser.php");
 }
 if ($session['user']['superuser'] & SU_INFINITE_DAYS) {
-    addnav("Superuser");
-    addnav("/?New Day", "newday.php");
+    Nav::add("Superuser");
+    Nav::add("/?New Day", "newday.php");
 }
 $translator->setSchema();
 
-addnav("", "news.php");
+Nav::add("", "news.php");
 if ($totaltoday > $newsperpage) {
-    addnav("Today's news");
+    Nav::add("Today's news");
     for ($i = 0; $i < $totaltoday; $i += $newsperpage) {
         $pnum = $i / $newsperpage + 1;
         if ($pnum == $page) {
-            addnav(array("`b`#Page %s`0`b", $pnum), "news.php?offset=$offset&page=$pnum");
+            Nav::add(array("`b`#Page %s`0`b", $pnum), "news.php?offset=$offset&page=$pnum");
         } else {
-            addnav(array("Page %s", $pnum), "news.php?offset=$offset&page=$pnum");
+            Nav::add(array("Page %s", $pnum), "news.php?offset=$offset&page=$pnum");
         }
     }
 }
 
-page_footer();
+Footer::pageFooter();

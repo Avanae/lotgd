@@ -1,11 +1,19 @@
 <?php
 
-use Lotgd\MySQL\Database;
-use Lotgd\Translator;
-use Lotgd\Commentary;
 use Lotgd\Accounts;
-use Lotgd\Output;
+use Lotgd\AddNews;
+use Lotgd\Commentary;
 use Lotgd\DataCache;
+use Lotgd\Http;
+use Lotgd\Motd;
+use Lotgd\MySQL\Database;
+use Lotgd\Nav;
+use Lotgd\Output;
+use Lotgd\Page\Footer;
+use Lotgd\Page\Header;
+use Lotgd\Settings;
+use Lotgd\Translator;
+use Lotgd\Nltoappon;
 
 // addnews ready
 // translator ready
@@ -14,27 +22,26 @@ define("ALLOW_ANONYMOUS", true);
 define("OVERRIDE_FORCED_NAV", true);
 require_once __DIR__ . "/common.php";
 $output = Output::getInstance();
-require_once __DIR__ . "/lib/nltoappon.php";
-require_once __DIR__ . "/lib/http.php";
-use Lotgd\Motd;
+
 
 Translator::getInstance()->setSchema("motd");
+$settings = Settings::getInstance();
 
-$op = httpget('op');
-$id = httpget('id');
+$op = Http::get('op');
+$id = Http::get('id');
 
 Commentary::addCommentary();
-popup_header("LoGD Message of the Day (MoTD)");
+Header::popupHeader("LoGD Message of the Day (MoTD)");
 
 if ($session['user']['superuser'] & SU_POST_MOTD) {
-    $addm = translate_inline("Add MoTD");
-    $addp = translate_inline("Add Poll");
+    $addm = Translator::translateInline("Add MoTD");
+    $addp = Translator::translateInline("Add Poll");
     $output->rawOutput(" [ <a href='motd.php?op=add'>$addm</a> | <a href='motd.php?op=addpoll'>$addp</a> ]<br/><br/>");
 }
 
 if ($op == "vote") {
-    $motditem = httppost('motditem');
-    $choice = (string)httppost('choice');
+    $motditem = Http::post('motditem');
+    $choice = (string)Http::post('choice');
     $sql = "DELETE FROM " . Database::prefix("pollresults") . " WHERE motditem='$motditem' AND account='{$session['user']['acctid']}'";
     Database::query($sql);
     $sql = "INSERT INTO " . Database::prefix("pollresults") . " (choice,account,motditem) VALUES ('$choice','{$session['user']['acctid']}','$motditem')";
@@ -44,9 +51,9 @@ if ($op == "vote") {
     exit();
 }
 if (($op == "save" || $op == "savenew") && ($session['user']['superuser'] & SU_POST_MOTD)) {
-    if (httppost('preview')) {
-        $title = httppost('motdtitle');
-        $body = nltoappon((string) httppost('motdbody'));
+    if (Http::post('preview')) {
+        $title = Http::post('motdtitle');
+        $body = Nltoappon::convert((string) Http::post('motdbody'));
         Motd::motdItem($title, $body, $session['user']['name'], date('Y-m-d H:i:s'), (int) $id);
         Motd::motdForm((int) $id, $_POST);
     } else {
@@ -68,9 +75,9 @@ if ($op == "add" || $op == "addpoll" || $op == "del") {
         } elseif ($op == "del") {
             Motd::motdDel($id);
             $output->output("`^Entry deleted.`0`n");
-            $return = translate_inline("Return to MoTD");
+            $return = Translator::translateInline("Return to MoTD");
             $output->rawOutput("<a href='motd.php'>$return</a>");
-            addnav('', 'motd.php');
+            Nav::add('', 'motd.php');
         }
     } else {
         if ($session['user']['loggedin']) {
@@ -85,15 +92,15 @@ if ($op == "add" || $op == "addpoll" || $op == "del") {
     }
 }
 if ($op == "") {
-    $count = getsetting("motditems", 5);
-    $newcount = (int)httppost("newcount");
-    if ($newcount == 0 || httppost('proceed') == '') {
+    $count = $settings->getSetting("motditems", 5);
+    $newcount = (int)Http::post("newcount");
+    if ($newcount == 0 || Http::post('proceed') == '') {
         $newcount = 0;
     }
         /*
         Motd::motditem("Beta!","Please see the beta message below.","","", "");
         */
-    $month_post = httppost("month");
+    $month_post = Http::post("month");
     //SQL Injection attack possible -> kill it off after 7 letters as format is i.e. "2000-05"
     $month_post = substr($month_post, 0, 7);
     if (preg_match("/[0-9][0-9][0-9][0-9]-[0-9][0-9]/", $month_post) !== 1) {
@@ -156,14 +163,14 @@ if ($op == "") {
     $output->rawOutput("<option value=''>--Current--</option>");
     while ($row = Database::fetchAssoc($result)) {
         $time = strtotime("{$row['d']}-01");
-        $m = translate_inline(date("M", $time));
+        $m = Translator::translateInline(date("M", $time));
         $output->rawOutput("<option value='{$row['d']}'" . ($month_post == $row['d'] ? " selected" : "") . ">$m" . date(", Y", $time) . " ({$row['c']})</option>");
     }
     $output->rawOutput("</select>" . Translator::clearButton());
-    $showmore = translate_inline("Show more");
+    $showmore = Translator::translateInline("Show more");
     $output->rawOutput("<input type='hidden' name='newcount' value='" . ($count + $newcount) . "'>");
     $output->rawOutput("<input type='submit' value='$showmore' name='proceed'  class='button'>");
-    $output->rawOutput(" <input type='submit' value='" . translate_inline("Submit") . "' class='button'>");
+    $output->rawOutput(" <input type='submit' value='" . Translator::translateInline("Submit") . "' class='button'>");
     $output->rawOutput("</form>");
 
     Commentary::commentDisplay("`n`@Commentary:`0`n", "motd");
@@ -182,4 +189,4 @@ if ($row && isset($row['motddate'])) {
     $session['user']['lastmotd'] = '1970-01-01 00:00:00';
 }
 
-popup_footer();
+Footer::popupFooter();

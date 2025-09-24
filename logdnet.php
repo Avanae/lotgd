@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 use Lotgd\MySQL\Database;
 use Lotgd\Translator;
+use Lotgd\Http;
+use Lotgd\Page\Header;
+use Lotgd\Page\Footer;
+use Lotgd\Nav;
+use Lotgd\ErrorHandler;
+use Lotgd\Backtrace;
+use Lotgd\Sanitize;
+use Lotgd\PullUrl;
 
 // translator ready
 // addnews ready
@@ -14,15 +22,8 @@ if (!isset($_GET['op']) || $_GET['op'] != 'list') {
     //don't want people to be able to visit the list while logged in -- breaks their navs.
     define("OVERRIDE_FORCED_NAV", true);
 }
-use Lotgd\Http;
-use Lotgd\Page\Header;
-use Lotgd\Page\Footer;
-use Lotgd\Nav;
-use Lotgd\ErrorHandler;
-use Lotgd\Backtrace;
 
 require_once __DIR__ . "/common.php";
-require_once __DIR__ . "/lib/sanitize.php";
 
 Translator::getInstance()->setSchema("logdnet");
 
@@ -32,17 +33,7 @@ function lotgdsort($a, $b)
 
     global $logd_version;
     $official_prefixes = array(
-        "1.1.1 Dragonprime Edition",
-        "1.1.0 Dragonprime Edition",
-        "1.0.6",
-        "1.0.5",
-        "1.0.4",
-        "1.0.3",
-        "1.0.2",
-        "1.0.1",
-        "1.0.0",
-        // MUST REMEMBER TO PUT NEW PRE-RELEASES HERE
-        "0.9.7"
+        "1.0.0 Gielinor Edition"
     );
 
     $aver = strtolower(str_replace(' ', '', $a['version']));
@@ -90,14 +81,14 @@ function lotgdsort($a, $b)
     return (($costa < $costb) ? -1 : 1);
 }
 
-$op = httpget('op');
+$op = Http::get('op');
 if ($op == "") {
-       $addy  = httpget('addy');
-       $desc  = httpget('desc');
-       $vers  = httpget('version');
-       $admin = httpget('admin');
-       $count = (int)httpget('c');
-       $lang  = httpget('l');
+       $addy  = Http::get('addy');
+       $desc  = Http::get('desc');
+       $vers  = Http::get('version');
+       $admin = Http::get('admin');
+       $count = (int)Http::get('c');
+       $lang  = Http::get('l');
 
     if ($vers == "") {
         $vers = "Unknown";
@@ -112,7 +103,7 @@ if ($op == "") {
     $row = Database::fetchAssoc($result);
 
     // Clean up the desc
-    $desc = logdnet_sanitize($desc);
+    $desc = Sanitize::logdnetSanitize($desc);
     $desc = soap($desc);
     // Limit descs to 75 characters.
     if (strlen($desc) > 75) {
@@ -181,7 +172,7 @@ if ($op == "") {
     Database::query($sql);
 
     //Now, if we're using version 2 of LoGDnet, we'll return the appropriate code.
-    $v = httpget("v");
+    $v = Http::get("v");
     if ((int)$v >= 2) {
         $currency = getsetting("paypalcurrency", "USD");
         $info = array();
@@ -246,7 +237,6 @@ if ($op == "") {
     rawoutput("</td><td>");
     output("Version");
     rawoutput("</td>");
-    require_once __DIR__ . "/lib/pullurl.php";
     $servers = array();
     $u = getsetting("logdnetserver", "http://logdnet.logd.com/");
     $logdnet = getsetting('logdnet', 0);
@@ -256,7 +246,7 @@ if ($op == "") {
     }
     if ($logdnet && $u != "") {
         try {
-            $servers = pullurl($u . "logdnet.php?op=net");
+            $servers = PullUrl::pull($u . "logdnet.php?op=net");
             if (!$servers) {
                 $servers = array();
             }
@@ -314,7 +304,7 @@ if ($op == "") {
                     preg_replace("|<[a-zA-Z0-9/ =]+>|", "", $row['description']);
 
                 // Clean up the desc
-                $row['description'] = logdnet_sanitize($row['description']);
+                $row['description'] = Sanitize::logdnetSanitize($row['description']);
                 $row['description'] = soap($row['description']);
                 // Limit descs to 75 characters.
                 if (strlen($row['description']) > 75) {
@@ -332,7 +322,7 @@ if ($op == "") {
 
                 // Correct for old logdnet servers
                 if ($row['version'] == "") {
-                    $row['version'] = translate_inline("Unknown");
+                    $row['version'] = Translator::translate("Unknown");
                 }
 
                 // Output the information we have.

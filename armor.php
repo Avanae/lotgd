@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 use Lotgd\MySQL\Database;
 use Lotgd\Translator;
+use Lotgd\Http;
+use Lotgd\Page\Header;
+use Lotgd\Page\Footer;
+use Lotgd\Nav\VillageNav;
+use Lotgd\Nav;
+use Lotgd\DateTime;
+use Lotgd\Modules\HookHandler;
 
 // translator ready
 // addnews ready
@@ -15,13 +22,6 @@ use Lotgd\Translator;
 * @see armoreditor.php
 */
 require_once __DIR__ . "/common.php";
-
-use Lotgd\Http;
-use Lotgd\Page\Header;
-use Lotgd\Page\Footer;
-use Lotgd\Nav\VillageNav;
-use Lotgd\Nav;
-use Lotgd\DateTime;
 
 $translator = Translator::getInstance();
 
@@ -56,7 +56,7 @@ $schemas = array(
 );
 
 $basetext['schemas'] = $schemas;
-$texts = modulehook("armortext", $basetext);
+$texts = HookHandler::hook("armortext", $basetext);
 $schemas = $texts['schemas'];
 
 $translator->setSchema($schemas['title']);
@@ -92,9 +92,9 @@ if ($op == "") {
     }
     $translator->setSchema();
 
-    $aname = translate_inline("`bName`b");
-    $adef = translate_inline("`bDefense`b");
-    $acost = translate_inline("`bCost`b");
+    $aname = Translator::translate("`bName`b");
+    $adef = Translator::translate("`bDefense`b");
+    $acost = Translator::translate("`bCost`b");
     rawoutput("<table border='0' cellpadding='0'>");
     rawoutput("<tr class='trhead'><td>");
     output_notl($aname);
@@ -106,7 +106,7 @@ if ($op == "") {
     $i = 0;
     while ($row = Database::fetchAssoc($result)) {
         $link = true;
-        $row = modulehook("modify-armor", $row);
+        $row = HookHandler::hook("modify-armor", $row);
         if (isset($row['skip']) && $row['skip'] === true) {
             continue;
         }
@@ -159,7 +159,7 @@ if ($op == "") {
         VillageNav::render();
     } else {
         $row = Database::fetchAssoc($result);
-        $row = modulehook("modify-armor", $row);
+        $row = HookHandler::hook("modify-armor", $row);
         if ($row['value'] > ($session['user']['gold'] + $tradeinvalue)) {
             $translator->setSchema($schemas['notenoughgold']);
             output($texts['notenoughgold'], $row['armorname']);
