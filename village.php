@@ -188,7 +188,7 @@ $translator->setSchema();
 
 Nav::add("F?Forest", "forest.php");
 if ((int) $settings->getSetting('pvp', 1)) {
-    Nav::add("S?Slay Other Players", "pvp.php");
+    Nav::add("The Wilderness", "pvp.php");
 }
 if ((bool) $settings->getSetting('enablecompanions', true)) {
     $translator->setSchema($schemas['mercenarycamp']);
