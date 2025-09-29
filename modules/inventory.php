@@ -22,7 +22,7 @@ function inventory_getmoduleinfo(){
 				"Note: Setting this to 0 will allow the user to carry a limitless weight of items, note",
 				"droppable"=>"Items are droppable?, bool|1",
 			"Inventory - Setup,title",
-				"withcharstats"=>"Enable the charstat popup for the inventory,bool|0",
+				"withcharstats"=>"Enable the charstat popup for the inventory,bool|1",
 				"Please understand that this function is still in an early beta phase and not fully working!,note",
 		),
 		"prefs"=>array(
@@ -122,6 +122,7 @@ function inventory_install(){
 	module_addhook("dragonkill");
 	module_addhook("battle-defeat");
 	module_addhook("delete_character");
+	module_addhook("charstats");
 
 	module_addhook("fightnav-specialties");
 	module_addhook("apply-specialties");
@@ -149,3 +150,5 @@ function inventory_run(){
 	require_once("modules/inventory/run/case_$op.php");
 }
 ?>
+
+
