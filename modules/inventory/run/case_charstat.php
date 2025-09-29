@@ -1,7 +1,10 @@
 <?php
 	global $session;
 	require_once("lib/sanitize.php");
-	define("OVERRIDE_FORCED_NAV", true);
+	if (! defined("OVERRIDE_FORCED_NAV")) {
+		define("OVERRIDE_FORCED_NAV", true);
+	}
+
 	$item = db_prefix("item");
 	$inventory = db_prefix("inventory");
 	$op2 = httpget('op2');
