@@ -54,9 +54,9 @@
 			break;
 	}
 	popup_header("Your Inventory ");
-	output("You are currently wearing the following items:`n`n");
+	output("You are currently carrying the following items:`n`n");
 	$layout = array(
-/*		"Weapons,title",
+		"Weapons,title",
 			"righthand",
 			"lefthand",
 		"Armor,title",
@@ -71,7 +71,7 @@
 			"ring3",
 			"neck",
 			"belt",
-*/		"Inventory,title",
+		"Inventory,title",
 			"Unequippables",
 	);
 	$sql = "SELECT $item.*, MAX($inventory.equipped) AS equipped, COUNT($inventory.equipped) AS quantity FROM $item INNER JOIN $inventory ON $inventory.itemid = $item.itemid WHERE  $inventory.userid = {$session['user']['acctid']} GROUP BY $inventory.itemid ORDER BY $item.equipwhere";
