@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use Lotgd\Nav;
 use Lotgd\Http;
@@ -44,6 +44,25 @@ function mining_uninstall(): bool
     return true;
 }
 
+function mining_ensure_skills_module(): bool
+{
+    if (function_exists('skills_load_player_data')) {
+        return true;
+    }
+
+    if (! is_module_active('skills')) {
+        return false;
+    }
+
+    if (function_exists('injectmodule')) {
+        injectmodule('skills');
+    } else {
+        require_once 'modules/skills.php';
+    }
+
+    return function_exists('skills_load_player_data');
+}
+
 function mining_dohook(string $hookName, array $args): array
 {
     switch ($hookName) {
@@ -53,7 +72,7 @@ function mining_dohook(string $hookName, array $args): array
 
         case 'village':
             $header = $args['gatenav'] ?? 'City Gates';
-            $navigation = \Lotgd\Nav::getInstance();
+            $navigation = Nav::getInstance();
             $previousSection = $navigation->getNavSection();
 
             $navigation->setNavSection($header);
@@ -79,14 +98,7 @@ function mining_run(): void
     page_header('The Mine');
 
     $playerId = (int) ($session['user']['acctid'] ?? 0);
-    $mining = ['level' => 1, 'experience' => 0];
-
-    if ($playerId > 0 && function_exists('skills_load_player_data')) {
-        $skills = skills_load_player_data($playerId);
-        if (isset($skills['mining'])) {
-            $mining = $skills['mining'];
-        }
-    }
+    $mining = mining_load_player_skill($playerId);
 
     $playerLevel = (int) ($mining['level'] ?? 1);
 
@@ -115,6 +127,7 @@ function mining_run(): void
     output('Lanterns hang from thick beams, casting a dim glow over the wide chambers where miners haul carts laden with coal, iron, and mithril.`n');
     output('The deeper you go, the louder the echoes of hammer and stone, until it feels as though the earth itself is alive with industry.`n');
     output('Though busy and well-guarded, whispers tell of hidden passages that lead into darker, unexplored caverns best left undisturbed.`n`n');
+
     $experienceDisplay = (float) ($mining['experience'] ?? 0);
 
     if ($playerId > 0) {
@@ -138,42 +151,48 @@ function mining_run(): void
             if ($playerLevel < $requiredLevel) {
                 output('`$You need a mining level of `^%s`$ to work this vein.`0`n`n', $selectedOre['level']);
             } else {
-                output('`@You heft your pickaxe and work the %s vein.`0`n`n', $selectedOre['name']);
+                $availableTurns = (int) ($session['user']['turns'] ?? 0);
 
-                $levelDelta = max(0, $playerLevel - $requiredLevel);
-                $successChance = min(0.95, 0.35 + ($levelDelta * 0.05));
-                $successPercent = (int) round($successChance * 100);
-                output('`7(Success chance: `^%s%%`7)`0`n', $successPercent);
+                if ($availableTurns <= 0) {
+                    output('`$You are too exhausted to work another vein today.`0`n`n');
+                } else {
+                    $session['user']['turns'] = max(0, $availableTurns - 1);
+                    debuglog(sprintf('Spent a turn mining %s.', $selectedOre['name']), false, false, 'turns', -1);
 
-                $roll = random_int(1, 100);
+                    output('`@You swing your pickaxe at the %s rock.`0`n`n', $selectedOre['name']);
 
-                $progress = null;
+                    $levelDelta = max(0, $playerLevel - $requiredLevel);
+                    $successChance = min(0.95, 0.35 + ($levelDelta * 0.05));
+                    $successPercent = (int) round($successChance * 100);
 
-                if ($roll <= $successPercent) {
-                    output('`@After steady swings you pry loose a chunk of %s!`0`n`n', $selectedOre['name']);
+                    $roll = random_int(1, 100);
+                    $progress = null;
 
-                    if (mining_store_ore_in_inventory($selectedOre, $playerId)) {
-                        output('`2You tuck the ore safely into your inventory.`0`n`n');
+                    if (mining_should_trigger_collapse()) {
+                        $progress = mining_handle_collapse_event($selectedOre, $playerId);
+                    } elseif ($roll <= $successPercent) {
+                        output('`@You managed to mine some %s ore!`0`n', $selectedOre['name']);
+
+                        if (mining_store_ore_in_inventory($selectedOre, $playerId)) {
+                            output('`2You tuck the %s ore safely into your inventory.`0`n`n', $selectedOre['name']);
+                        } else {
+                            output('`$Your inventory is full so you drop the %s ore onto the ground.`0`n`n', $selectedOre['name']);
+                        }
+
+                        $progress = mining_award_experience($selectedOre, $playerId, true);
                     } else {
-                        output('`$Without proper storage the ore slips away before you can keep it.`0`n`n');
+                        output('`$Despite your efforts, the rock yields nothing this time. You did however learn something.`0`n`n');
+
+                        $progress = mining_award_experience($selectedOre, $playerId, false);
                     }
 
-                    $progress = mining_award_experience($selectedOre, $playerId, true);
-                } else {
-                    output('`$Despite your effort the vein yields nothing this time.`0`n`n');
+                    mining_output_experience_gain($progress);
 
-                    $progress = mining_award_experience($selectedOre, $playerId, false);
-                }
-
-                mining_output_experience_gain($progress);
-
-                if (is_array($progress)) {
-                    $mining['level'] = $progress['level_after'];
-                    $mining['experience'] = $progress['experience_after'];
+                    $mining = mining_load_player_skill($playerId, true);
                 }
             }
         } else {
-            output('`$The vein you were looking for isn\'t available here.`0`n`n');
+            output('`$The ore you were looking for isn\'t available here.`0`n`n');
         }
     }
 
@@ -253,10 +272,35 @@ function mining_get_ores(): array
     ];
 }
 
+function mining_load_player_skill(int $userId, bool $forceRefresh = false): array
+{
+    $defaults = ['level' => 1, 'experience' => 0];
+
+    if ($userId <= 0) {
+        return $defaults;
+    }
+
+    if (! mining_ensure_skills_module()) {
+        return $defaults;
+    }
+
+    $skills = skills_load_player_data($userId, $forceRefresh);
+    $player = $skills['mining'] ?? null;
+
+    if (! is_array($player)) {
+        return $defaults;
+    }
+
+    return [
+        'level' => (int) ($player['level'] ?? 1),
+        'experience' => (int) ($player['experience'] ?? 0),
+    ];
+}
+
 function mining_get_experience_values(): array
 {
     return [
-        'copper' => 17.5,
+        'copper' => 13555555,
         'tin' => 17.5,
         'iron' => 35.0,
         'silver' => 40.0,
@@ -270,7 +314,11 @@ function mining_get_experience_values(): array
 
 function mining_award_experience(array $ore, int $userId, bool $success): ?array
 {
-    if ($userId <= 0 || ! function_exists('skills_load_player_data')) {
+    if ($userId <= 0) {
+        return null;
+    }
+
+    if (! mining_ensure_skills_module()) {
         return null;
     }
 
@@ -346,18 +394,32 @@ function mining_award_experience(array $ore, int $userId, bool $success): ?array
 
     $newLevel = mining_calculate_level_from_experience($newExperience);
 
-    $experienceDelta = (int) max(0, $newExperience - $currentExperience);
     $table = Database::prefix('skills');
 
-    if ($experienceDelta > 0 || $newLevel !== $currentLevel) {
-        $sql = sprintf(
-            'UPDATE `%s` SET `mining_experience` = `mining_experience` + %d, `mining_level` = %d WHERE `userid` = %d',
+    if (function_exists('skills_create_player_row')) {
+        skills_create_player_row($userId);
+    }
+
+    $updateSql = sprintf(
+        'UPDATE %s SET `mining_experience` = %d, `mining_level` = %d WHERE `userid` = %d',
+        $table,
+        $newExperience,
+        $newLevel,
+        $userId
+    );
+
+    Database::query($updateSql);
+
+    if (Database::affectedRows() === 0) {
+        $insertSql = sprintf(
+            'INSERT INTO %s (`userid`, `mining_experience`, `mining_level`) VALUES (%d, %d, %d)',
             $table,
-            $experienceDelta,
-            $newLevel,
-            $userId
+            $userId,
+            $newExperience,
+            $newLevel
         );
-        Database::query($sql);
+
+        Database::query($insertSql);
     }
 
     skills_load_player_data($userId, true);
@@ -383,13 +445,17 @@ function mining_output_experience_gain(?array $progress): void
     $experienceAfter = (int) ($progress['experience_after'] ?? 0);
 
     if ($xpGain > 0) {
-        output('`#You gain `^%s`# Mining experience.`0`n', mining_format_experience($xpGain));
+        output('`#You gained `^%s`# Mining experience.`0`n', mining_format_experience($xpGain));
     } elseif ($experienceAfter === $experienceBefore) {
-        output('`#Your Mining experience cannot increase any further.`0`n');
+        //output('`#Your Mining experience cannot increase any further.`0`n');
     }
 
     if (($progress['level_after'] ?? 0) > ($progress['level_before'] ?? 0)) {
-        output('`!Your Mining skill rises to level `^%s`!`0`n', $progress['level_after']);
+        output('`n`1Congratulations, you just advanced a mining level.`nYour Mining level is now `g%s`0`n', $progress['level_after']);
+    }
+
+    if (($progress['level_after'] ?? 0) >= 99 && ($progress['level_before'] ?? 0) < 99) {
+        output('`1You are now a master miner. Why not visit the mining guild for something special?`0`n');
     }
 }
 
@@ -534,9 +600,10 @@ function mining_store_ore_in_inventory(array $ore, int $userId): bool
     $item = get_item_by_name($itemName);
 
     if ($item === false) {
-        $description = sprintf('Raw %s ore mined from the guild tunnels.', strtolower($ore['name']));
+        $description = sprintf('This piece of %s needs refining.', strtolower($ore['name']));
 
         $itemData = [
+            'itemid' => 0,
             'class' => 'Ore',
             'name' => $itemName,
             'description' => $description,
@@ -593,5 +660,29 @@ function mining_store_ore_in_inventory(array $ore, int $userId): bool
     return (bool) $result;
 }
 
+function mining_should_trigger_collapse(): bool
+{
+    return random_int(1, 100) <= 10;
+}
 
+function mining_handle_collapse_event(array $ore, int $userId): ?array
+{
+    global $session;
 
+    $currentHitpoints = (int) ($session['user']['hitpoints'] ?? 0);
+    $maxHitpoints = (int) ($session['user']['maxhitpoints'] ?? $currentHitpoints);
+
+    if ($maxHitpoints <= 0) {
+        $maxHitpoints = max(1, $currentHitpoints);
+    }
+
+    $damage = max(1, (int) ceil($maxHitpoints * 0.10));
+    $newHitpoints = max(1, $currentHitpoints - $damage);
+    $actualDamage = max(0, $currentHitpoints - $newHitpoints);
+    $session['user']['hitpoints'] = $newHitpoints;
+
+    output('`$Mine Collapse!`0 Rocks rain down as the tunnel shudders around you. You take `4%s`$ damage.`0`n`n', $actualDamage);
+    debuglog(sprintf('Injured for %s HP during a mine collapse.', $actualDamage), false, false, 'hitpoints', -$actualDamage);
+
+    return mining_award_experience($ore, $userId, false);
+}
