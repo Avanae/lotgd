@@ -300,7 +300,7 @@ function mining_load_player_skill(int $userId, bool $forceRefresh = false): arra
 function mining_get_experience_values(): array
 {
     return [
-        'copper' => 13555555,
+        'copper' => 17.5,
         'tin' => 17.5,
         'iron' => 35.0,
         'silver' => 40.0,
