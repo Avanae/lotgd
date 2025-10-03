@@ -63,6 +63,9 @@ function mining_ensure_skills_module(): bool
     return function_exists('skills_load_player_data');
 }
 
+
+
+
 function mining_dohook(string $hookName, array $args): array
 {
     switch ($hookName) {
@@ -86,7 +89,6 @@ function mining_dohook(string $hookName, array $args): array
 
     return $args;
 }
-
 function mining_run(): void
 {
     global $session;
@@ -99,7 +101,6 @@ function mining_run(): void
 
     $playerId = (int) ($session['user']['acctid'] ?? 0);
     $mining = mining_load_player_skill($playerId);
-
     $playerLevel = (int) ($mining['level'] ?? 1);
 
     addnav('Navigation');
@@ -123,7 +124,7 @@ function mining_run(): void
     }
 
     output('`c`bThe Mine`b`c`n');
-    output('`7This sprawling network of tunnels and shafts has been worked for generations, its stone walls scarred with the marks of countless pickaxes.`0`n');
+    output('`7This sprawling network of tunnels and shafts has been worked for generations, its stone walls scarred with the marks of countless pickaxes.`n');
     output('Lanterns hang from thick beams, casting a dim glow over the wide chambers where miners haul carts laden with coal, iron, and mithril.`n');
     output('The deeper you go, the louder the echoes of hammer and stone, until it feels as though the earth itself is alive with industry.`n');
     output('Though busy and well-guarded, whispers tell of hidden passages that lead into darker, unexplored caverns best left undisturbed.`n`n');
@@ -149,12 +150,12 @@ function mining_run(): void
             $requiredLevel = (int) ($selectedOre['level'] ?? 0);
 
             if ($playerLevel < $requiredLevel) {
-                output('`$You need a mining level of `^%s`$ to work this vein.`0`n`n', $selectedOre['level']);
+                output('`$You need a mining level of `^%s`$ to mine this rock.`0`n`n', $selectedOre['level']);
             } else {
                 $availableTurns = (int) ($session['user']['turns'] ?? 0);
 
                 if ($availableTurns <= 0) {
-                    output('`$You are too exhausted to work another vein today.`0`n`n');
+                    output('`$You are too exhausted to work another rock today.`0`n`n');
                 } else {
                     $session['user']['turns'] = max(0, $availableTurns - 1);
                     debuglog(sprintf('Spent a turn mining %s.', $selectedOre['name']), false, false, 'turns', -1);
@@ -164,6 +165,7 @@ function mining_run(): void
                     $levelDelta = max(0, $playerLevel - $requiredLevel);
                     $successChance = min(0.95, 0.35 + ($levelDelta * 0.05));
                     $successPercent = (int) round($successChance * 100);
+                    output('`7(Success chance: `^%s%%`7)`0`n', $successPercent);
 
                     $roll = random_int(1, 100);
                     $progress = null;
@@ -174,7 +176,7 @@ function mining_run(): void
                         output('`@You managed to mine some %s ore!`0`n', $selectedOre['name']);
 
                         if (mining_store_ore_in_inventory($selectedOre, $playerId)) {
-                            output('`2You tuck the %s ore safely into your inventory.`0`n`n', $selectedOre['name']);
+                            output('`2You place the %s ore safely into your inventory.`0`n`n', $selectedOre['name']);
                         } else {
                             output('`$Your inventory is full so you drop the %s ore onto the ground.`0`n`n', $selectedOre['name']);
                         }
@@ -192,7 +194,7 @@ function mining_run(): void
                 }
             }
         } else {
-            output('`$The ore you were looking for isn\'t available here.`0`n`n');
+            output('`$The vein you were looking for isn\'t available here.`0`n`n');
         }
     }
 
@@ -451,7 +453,11 @@ function mining_output_experience_gain(?array $progress): void
     }
 
     if (($progress['level_after'] ?? 0) > ($progress['level_before'] ?? 0)) {
-        output('`n`1Congratulations, you just advanced a mining level.`nYour Mining level is now `g%s`0`n', $progress['level_after']);
+         output('`n`1Congratulations, you just advanced a mining level.`nYour Mining level is now `g%s`0`n', $progress['level_after']);
+    }
+
+    if (($progress['level_after'] ?? 0) >= 60 && ($progress['level_before'] ?? 0) < 60) {
+        output('`1You have gained access to the Mining Guild. Why not have a look?`0`n');
     }
 
     if (($progress['level_after'] ?? 0) >= 99 && ($progress['level_before'] ?? 0) < 99) {

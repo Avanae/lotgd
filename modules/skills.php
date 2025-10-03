@@ -1,4 +1,4 @@
-﻿﻿<?php
+﻿<?php
 
 use Lotgd\Nav;
 use Lotgd\Output;
@@ -21,6 +21,7 @@ function skills_getmoduleinfo(): array
 function skills_install(): bool
 {
     skills_create_schema();
+    module_addhook('charstats');
     module_addhook('village');
 
     return true;
@@ -43,26 +44,26 @@ function skills_dohook(string $hookName, array $args): array
             $schemas = $args['schemas'] ?? [];
 
             Translator::tlschema('module-skills');
-            Nav::add('Artisan Square');
-    
-            if (is_module_active('forging')) {
-                Nav::add('Blacksmith’s Furnace', 'runmodule.php?module=forging'); 
-            }
 
+            Nav::add('Artisan Square');
+
+
+                
             if (is_module_active('smithing')) {
                 Nav::add('The Iron Anvil', 'runmodule.php?module=smithing'); 
+                Nav::add('Blacksmith\'s Furnace', 'runmodule.php?module=smithing'); 
             }
 
             if (is_module_active('jeweller')) {
-                Nav::add('Jeweler’s Bench', 'runmodule.php?module=jeweler'); 
+                Nav::add('Jeweler\'s Bench', 'runmodule.php?module=jeweler'); 
             }
                         
             if (is_module_active('pottery')) {
-                Nav::add('Potter’s Kiln', 'runmodule.php?module=pottery');
+                Nav::add('Potter\'s Kiln', 'runmodule.php?module=pottery');
             }
             
             if (is_module_active('runecrafting')) {
-                Nav::add('Runesmith’s Table', 'runmodule.php?module=runecrafting'); 
+                Nav::add('Runesmith\'s Table', 'runmodule.php?module=runecrafting'); 
             }
             
             if (is_module_active('herblore')) {
@@ -72,6 +73,18 @@ function skills_dohook(string $hookName, array $args): array
             if (is_module_active('fletching')) {
                 Nav::add('Oakshaft Fletchery', 'runmodule.php?module=fletching'); 
             }      
+
+
+            Nav::add('Guild Halls');
+            Nav::add('Cooking Guild', 'runmodule.php?module=cookingguild');
+            Nav::add('Crafting Guild', 'runmodule.php?module=craftingguild');
+            Nav::add('Mining Guild', 'runmodule.php?module=miningguild');
+            Nav::add('Farming Guild', 'runmodule.php?module=farmingguild');
+            Nav::add('Fishing Guild', 'runmodule.php?module=fishingguild');
+            Nav::add('Magic Guild', 'runmodule.php?module=magicguild');
+            Nav::add('Ranging Guild', 'runmodule.php?module=rangingguild');
+            Nav::add('Warriors Guild', 'runmodule.php?module=warriorsguild');
+            Nav::add('Woodcutting Guild', 'runmodule.php?module=woodcuttingguild');
 
             Translator::tlschema();
 
@@ -86,31 +99,64 @@ function skills_dohook(string $hookName, array $args): array
                 /** @var array<string, mixed> $sections */
                 $sections = $prop->getValue();
 
-                if (
-                    $marketHeader !== ''
-                    && isset($sections[$marketHeader])
-                    && isset($sections['Artisan Square'])
-                ) {
-                    $artisanSection = $sections['Artisan Square'];
-                    unset($sections['Artisan Square']);
+                $artisanSection = $sections['Artisan Square'] ?? null;
+                $guildSection = $sections['Guild Halls'] ?? null;
 
+                if ($artisanSection !== null) {
+                    unset($sections['Artisan Square']);
+                }
+
+                if ($guildSection !== null) {
+                    unset($sections['Guild Halls']);
+                }
+
+                if ($artisanSection !== null || $guildSection !== null) {
                     $reordered = [];
+
                     foreach ($sections as $key => $value) {
                         $reordered[$key] = $value;
-                        if ($key === $marketHeader) {
+
+                        if ($key === $marketHeader && $artisanSection !== null) {
                             $reordered['Artisan Square'] = $artisanSection;
+                            $artisanSection = null;
+
+                            if ($guildSection !== null) {
+                                $reordered['Guild Halls'] = $guildSection;
+                                $guildSection = null;
+                            }
+
+                            continue;
+                        }
+
+                        if ($key === 'Tavern Street') {
+                            if ($artisanSection !== null) {
+                                $reordered['Artisan Square'] = $artisanSection;
+                                $artisanSection = null;
+                            }
+
+                            if ($guildSection !== null) {
+                                $reordered['Guild Halls'] = $guildSection;
+                                $guildSection = null;
+                            }
                         }
                     }
 
-                    if (! isset($reordered['Artisan Square'])) {
+                    if ($artisanSection !== null) {
                         $reordered['Artisan Square'] = $artisanSection;
+                        $artisanSection = null;
+                    }
+
+                    if ($guildSection !== null) {
+                        $reordered['Guild Halls'] = $guildSection;
                     }
 
                     $prop->setValue(null, $reordered);
                 }
             } catch (\ReflectionException $exception) {
-                Output::getInstance()->debug(sprintf('Artisan Square nav reordering failed: %s', $exception->getMessage()));
+                Output::getInstance()->debug(sprintf('Guild nav reordering failed: %s', $exception->getMessage()));
             }
+
+            
 
             break;
     }
@@ -349,9 +395,13 @@ function skills_normalize_player_row(?array $row, int $userId): array
     return $data;
 }
 
-function skills_load_player_data(int $userId): array
+function skills_load_player_data(int $userId, bool $forceRefresh = false): array
 {
     static $cache = [];
+
+    if ($forceRefresh) {
+        unset($cache[$userId]);
+    }
 
     if (isset($cache[$userId])) {
         return $cache[$userId];
