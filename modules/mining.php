@@ -63,11 +63,10 @@ function mining_ensure_skills_module(): bool
     return function_exists('skills_load_player_data');
 }
 
-
-
-
 function mining_dohook(string $hookName, array $args): array
 {
+    global $session;
+
     switch ($hookName) {
         case 'skilldisplay':
             $args = mining_collect_skill_stats($args);
@@ -85,19 +84,50 @@ function mining_dohook(string $hookName, array $args): array
                 $navigation->setNavSection($previousSection);
             }
             break;
+
+        case 'skillguildnav':
+            $playerData = $args['player'] ?? [];
+            $miningData = $playerData['mining'] ?? [];
+            $miningLevel = (int) ($miningData['level'] ?? 0);
+
+            if ($miningLevel === 0) {
+                $userId = (int) ($playerData['userid'] ?? $playerData['acctid'] ?? 0);
+
+                if ($userId <= 0) {
+                    $userId = (int) ($session['user']['acctid'] ?? 0);
+                }
+
+                if ($userId > 0) {
+                    $loadedSkill = mining_load_player_skill($userId);
+                    $miningLevel = (int) ($loadedSkill['level'] ?? 0);
+                }
+            }
+
+            $label = $miningLevel < 60
+                ? sprintf('Mining Guild (Requires 60 Mining, you have %d)', $miningLevel)
+                : 'Mining Guild (Requires 60 Mining)';
+
+            Nav::add($label, 'runmodule.php?module=mining&op=guild');
+            break;
     }
 
     return $args;
 }
+
 function mining_run(): void
 {
     global $session;
 
     $op = Http::get('op');
     $oreKey = (string) Http::get('ore');
+    $context = (string) Http::get('context');
+    $guildOreKeys = ['mithril', 'adamantite', 'runite'];
+    $isGuildContext = ($context === 'guild');
+    $isGuildView = ($op === 'guild') || $isGuildContext;
+
     $ores = mining_get_ores();
 
-    page_header('The Mine');
+    page_header($isGuildView ? 'The Mining Guild' : 'The Mine');
 
     $playerId = (int) ($session['user']['acctid'] ?? 0);
     $mining = mining_load_player_skill($playerId);
@@ -106,9 +136,32 @@ function mining_run(): void
     addnav('Navigation');
     addnav('Back to the Village', 'village.php');
 
+    if ($isGuildView) {
+        addnav('Leave the Mining Guild', 'runmodule.php?module=mining');
+    } elseif ($playerLevel >= 60) {
+        addnav('Visit the Mining Guild', 'runmodule.php?module=mining&op=guild');
+    }
+
+    if ($isGuildView && $playerLevel < 60) {
+        output('`$Two armored guards bar your way. Only miners with a skill of `^60`$ or higher may enter the guild halls.`0`n`n');
+        page_footer();
+
+        return;
+    }
+
     $availableOres = array_values(array_filter(
         $ores,
-        static function (array $ore) use ($playerLevel): bool {
+        static function (array $ore) use ($playerLevel, $isGuildView, $guildOreKeys): bool {
+            $key = (string) ($ore['key'] ?? '');
+
+            if ($isGuildView && ! in_array($key, $guildOreKeys, true)) {
+                return false;
+            }
+
+            if (! $isGuildView && in_array($key, $guildOreKeys, true)) {
+                return false;
+            }
+
             return $playerLevel >= (int) ($ore['level'] ?? 0);
         }
     ));
@@ -116,18 +169,34 @@ function mining_run(): void
     if ($availableOres !== []) {
         addnav('Actions');
         foreach ($availableOres as $ore) {
+            $link = sprintf(
+                'runmodule.php?module=mining&op=mine&ore=%s',
+                rawurlencode($ore['key'])
+            );
+
+            if ($isGuildView) {
+                $link .= '&context=guild';
+            }
+
             addnav(
                 sprintf('Mine %s', $ore['name']),
-                sprintf('runmodule.php?module=mining&op=mine&ore=%s', rawurlencode($ore['key']))
+                $link
             );
         }
     }
 
-    output('`c`bThe Mine`b`c`n');
-    output('`7This sprawling network of tunnels and shafts has been worked for generations, its stone walls scarred with the marks of countless pickaxes.`n');
-    output('Lanterns hang from thick beams, casting a dim glow over the wide chambers where miners haul carts laden with coal, iron, and mithril.`n');
-    output('The deeper you go, the louder the echoes of hammer and stone, until it feels as though the earth itself is alive with industry.`n');
-    output('Though busy and well-guarded, whispers tell of hidden passages that lead into darker, unexplored caverns best left undisturbed.`n`n');
+    if ($isGuildView) {
+        output('`c`bThe Mining Guild`b`c`n');
+        output('`7Beyond a reinforced gate lies a network of immaculately maintained tunnels reserved for the realm\'s master miners.`n');
+        output('Here the best veins of mithril, adamantite, and runite are marked and guarded, their walls etched with decades of careful planning.`n');
+        output('Stone braziers line the corridors, and guild stewards keep careful track of every cart that rumbles deeper into the earth.`n`n');
+    } else {
+        output('`c`bThe Mine`b`c`n');
+        output('`7This sprawling network of tunnels and shafts has been worked for generations, its stone walls scarred with the marks of countless pickaxes.`n');
+        output('Lanterns hang from thick beams, casting a dim glow over the wide chambers where miners haul carts loaded with coal, iron, and mithril.`n');
+        output('The deeper you go, the louder the echoes of hammer and stone, until it feels as though the earth itself is alive with industry.`n');
+        output('Though busy and well-guarded, whispers tell of hidden passages that lead into darker, unexplored caverns best left undisturbed.`n`n');
+    }
 
     $experienceDisplay = (float) ($mining['experience'] ?? 0);
 
@@ -147,54 +216,61 @@ function mining_run(): void
         }
 
         if ($selectedOre !== null) {
-            $requiredLevel = (int) ($selectedOre['level'] ?? 0);
+            $isGuildOre = in_array($selectedOre['key'], $guildOreKeys, true);
 
-            if ($playerLevel < $requiredLevel) {
-                output('`$You need a mining level of `^%s`$ to mine this rock.`0`n`n', $selectedOre['level']);
+            if ($isGuildOre && $playerLevel < 60) {
+                output('`$Only miners with guild credentials may extract this vein.`0`n`n');
+            } elseif ($isGuildOre && ! $isGuildContext) {
+                output('`$Guild wardens stop you before you can swing. You must enter the Mining Guild to work this ore.`0`n`n');
             } else {
-                $availableTurns = (int) ($session['user']['turns'] ?? 0);
+                $requiredLevel = (int) ($selectedOre['level'] ?? 0);
 
-                if ($availableTurns <= 0) {
-                    output('`$You are too exhausted to work another rock today.`0`n`n');
+                if ($playerLevel < $requiredLevel) {
+                    output('`$You need a mining level of `^%s`$ to mine this rock.`0`n`n', $selectedOre['level']);
                 } else {
-                    $session['user']['turns'] = max(0, $availableTurns - 1);
-                    debuglog(sprintf('Spent a turn mining %s.', $selectedOre['name']), false, false, 'turns', -1);
+                    $availableTurns = (int) ($session['user']['turns'] ?? 0);
 
-                    output('`@You swing your pickaxe at the %s rock.`0`n`n', $selectedOre['name']);
+                    if ($availableTurns <= 0) {
+                        output('`$You are too exhausted to work another rock today.`0`n`n');
+                    } else {
+                        $session['user']['turns'] = max(0, $availableTurns - 1);
+                        debuglog(sprintf('Spent a turn mining %s.', $selectedOre['name']), false, false, 'turns', -1);
 
-                    $levelDelta = max(0, $playerLevel - $requiredLevel);
-                    $successChance = min(0.95, 0.35 + ($levelDelta * 0.05));
-                    $successPercent = (int) round($successChance * 100);
-                    output('`7(Success chance: `^%s%%`7)`0`n', $successPercent);
+                        output('`@You swing your pickaxe at the %s rock.`0`n`n', $selectedOre['name']);
 
-                    $roll = random_int(1, 100);
-                    $progress = null;
+                        $levelDelta = max(0, $playerLevel - $requiredLevel);
+                        $successChance = min(0.95, 0.35 + ($levelDelta * 0.05));
+                        $successPercent = (int) round($successChance * 100);
 
-                    if (mining_should_trigger_collapse()) {
-                        $progress = mining_handle_collapse_event($selectedOre, $playerId);
-                    } elseif ($roll <= $successPercent) {
-                        output('`@You managed to mine some %s ore!`0`n', $selectedOre['name']);
+                        $roll = random_int(1, 100);
+                        $progress = null;
 
-                        if (mining_store_ore_in_inventory($selectedOre, $playerId)) {
-                            output('`2You place the %s ore safely into your inventory.`0`n`n', $selectedOre['name']);
+                        if (mining_should_trigger_collapse()) {
+                            $progress = mining_handle_collapse_event($selectedOre, $playerId);
+                        } elseif ($roll <= $successPercent) {
+                            output('`@You managed to mine some %s ore!`0`n', $selectedOre['name']);
+
+                            if (mining_store_ore_in_inventory($selectedOre, $playerId)) {
+                                output('`2You place the %s ore safely into your inventory.`0`n`n', $selectedOre['name']);
+                            } else {
+                                output('`$Your inventory is full so you dropped the %s ore on the ground.`0`n`n', $selectedOre['name']);
+                            }
+
+                            $progress = mining_award_experience($selectedOre, $playerId, true);
                         } else {
-                            output('`$Your inventory is full so you drop the %s ore onto the ground.`0`n`n', $selectedOre['name']);
+                            output('`$Despite your efforts, the rock yields nothing this time. You did however learn something.`0`n`n');
+
+                            $progress = mining_award_experience($selectedOre, $playerId, false);
                         }
 
-                        $progress = mining_award_experience($selectedOre, $playerId, true);
-                    } else {
-                        output('`$Despite your efforts, the rock yields nothing this time. You did however learn something.`0`n`n');
+                        mining_output_experience_gain($progress);
 
-                        $progress = mining_award_experience($selectedOre, $playerId, false);
+                        $mining = mining_load_player_skill($playerId, true);
                     }
-
-                    mining_output_experience_gain($progress);
-
-                    $mining = mining_load_player_skill($playerId, true);
                 }
             }
         } else {
-            output('`$The vein you were looking for isn\'t available here.`0`n`n');
+            output('`$The rock you were looking for isn\'t available here.`0`n`n');
         }
     }
 

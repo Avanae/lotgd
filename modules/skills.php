@@ -47,8 +47,6 @@ function skills_dohook(string $hookName, array $args): array
 
             Nav::add('Artisan Square');
 
-
-                
             if (is_module_active('smithing')) {
                 Nav::add('The Iron Anvil', 'runmodule.php?module=smithing'); 
                 Nav::add('Blacksmith\'s Furnace', 'runmodule.php?module=smithing'); 
@@ -74,11 +72,10 @@ function skills_dohook(string $hookName, array $args): array
                 Nav::add('Oakshaft Fletchery', 'runmodule.php?module=fletching'); 
             }      
 
-
             Nav::add('Guild Halls');
             Nav::add('Cooking Guild', 'runmodule.php?module=cookingguild');
             Nav::add('Crafting Guild', 'runmodule.php?module=craftingguild');
-            Nav::add('Mining Guild', 'runmodule.php?module=miningguild');
+            Nav::add('Mining Guild', 'runmodule.php?module=mining&op=guild');
             Nav::add('Farming Guild', 'runmodule.php?module=farmingguild');
             Nav::add('Fishing Guild', 'runmodule.php?module=fishingguild');
             Nav::add('Magic Guild', 'runmodule.php?module=magicguild');
