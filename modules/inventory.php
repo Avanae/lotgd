@@ -1,14 +1,11 @@
 <?php
-// translator ready
-// addnews ready
-// mail ready
 
 function inventory_getmoduleinfo(){
 	$info = array(
 		"name"=>"Inventory Basic System",
 		"version"=>"2.0",
 		"author"=>"Christian Rutsch",
-		"category"=>"Items",
+		"category"=>"Inventory",
 		"download"=>"http://www.dragonprime.net/users/XChrisX/itemsystem.zip",
 		"override_forced_nav"=>true,
 		"settings"=>array(
@@ -16,14 +13,13 @@ function inventory_getmoduleinfo(){
 				"sellgold"=>"how much gold does selling an item return? (percent), int|66",
 				"sellgems"=>"how much gems does selling an item return? (percent), int|66",
 			"Inventory - Carrying items, title",
-				"limit"=>"How many items canbe carried by user?, range, 0,1000,1|0",
-				"Note: Setting this to 0 will allow the user to carry a limitless amount of items, note",
-				"weight"=>"Maximum weiht users can carry?, range,0,1000,1|0",
+				"limit"=>"How many items can be carried by user?, range, 0,1000,1|0",
+				"Note: Setting this to 0 will allow the user to carry a unlimited items, note",
+				"weight"=>"Maximum weight users can carry?, range,0,1000,1|0",
 				"Note: Setting this to 0 will allow the user to carry a limitless weight of items, note",
 				"droppable"=>"Items are droppable?, bool|1",
 			"Inventory - Setup,title",
 				"withcharstats"=>"Enable the charstat popup for the inventory,bool|1",
-				"Please understand that this function is still in an early beta phase and not fully working!,note",
 		),
 		"prefs"=>array(
 			"Inventory - Admin Prefs, title",
@@ -36,8 +32,6 @@ function inventory_install(){
 	$item = db_prefix("item");
 	$inventory = db_prefix("inventory");
 	$itembuffs = db_prefix("itembuffs");
-
-	// SQLs for creation of item-table
 
 	$item_table = array(
 		'itemid'=> array('name'=>'itemid', 'type'=>'int unsigned',	'extra'=>'auto_increment'),
@@ -150,5 +144,3 @@ function inventory_run(){
 	require_once("modules/inventory/run/case_$op.php");
 }
 ?>
-
-
