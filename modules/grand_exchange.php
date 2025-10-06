@@ -449,7 +449,7 @@ function grand_exchange_output_item_image_styles(): void
 
     $printed = true;
 
-    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}</style>');
+    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}.grand-exchange-sell-preview{display:inline-flex;align-items:center;margin-bottom:6px;font-weight:bold;}</style>');
 }
 
 function grand_exchange_render_item_label(string $itemName): string
@@ -1121,6 +1121,13 @@ function grand_exchange_render_sell_creation_form(int $userId, int $itemId): voi
     if ($available <= 0) {
         output('`$You do not have any unequipped copies of that item to sell.`0`n');
         return;
+    }
+
+    $image = grand_exchange_get_item_image_html($item['name']);
+
+    if ($image !== '') {
+        grand_exchange_output_item_image_styles();
+        rawoutput('<div class="grand-exchange-sell-preview">' . $image . grand_exchange_sanitize($item['name']) . '</div>');
     }
 
     output('Preparing to sell `b%s`b.`0`n`n', grand_exchange_sanitize($item['name']));
