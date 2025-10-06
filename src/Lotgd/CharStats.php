@@ -10,6 +10,8 @@ use Lotgd\Output;
 
 class CharStats
 {
+    private const DEFERRED_SECTIONS = ['Skills'];
+
     private array $stats = [];
 
     /**
@@ -59,25 +61,49 @@ class CharStats
     public function render(string $buffs): string
     {
         $output = Output::getInstance();
-        $charstat_str = Template::templateReplace('statstart');
+        $charstat = Template::templateReplace('statstart');
+        $deferred = [];
+
         foreach ($this->stats as $label => $section) {
-            if (count($section)) {
-                $arr = ['title' => Translator::translateInline($label)];
-                $sectionhead = Template::templateReplace('stathead', $arr);
-                foreach ($section as $name => $val) {
-                    if ($name == $label) {
-                        $a2 = ['title' => Translator::translateInline("`0$name"), 'value' => "`^$val`0"];
-                        $charstat_str .= Template::templateReplace('statbuff', $a2);
-                    } else {
-                        $a2 = ['title' => Translator::translateInline("`&$name`0"), 'value' => "`^$val`0"];
-                        $charstat_str .= $sectionhead . Template::templateReplace('statrow', $a2);
-                        $sectionhead = '';
-                    }
-                }
+            if (in_array($label, self::DEFERRED_SECTIONS, true)) {
+                $deferred[$label] = $section;
+                continue;
+            }
+
+            $charstat .= $this->renderSection($label, $section);
+        }
+
+        $charstat .= Template::templateReplace('statbuff', ['title' => Translator::translateInline('`0Buffs'), 'value' => $buffs]);
+
+        foreach ($deferred as $label => $section) {
+            $charstat .= $this->renderSection($label, $section);
+        }
+
+        $charstat .= Template::templateReplace('statend');
+
+        return $output->appoencode($charstat, true);
+    }
+
+    private function renderSection(string $label, array $section): string
+    {
+        if (count($section) === 0) {
+            return '';
+        }
+
+        $sectionHead = Template::templateReplace('stathead', ['title' => Translator::translateInline($label)]);
+        $buffer = '';
+
+        foreach ($section as $name => $val) {
+            if ($name == $label) {
+                $args = ['title' => Translator::translateInline("`0$name"), 'value' => "`^$val`0"];
+                $buffer .= Template::templateReplace('statbuff', $args);
+            } else {
+                $args = ['title' => Translator::translateInline("`&$name`0"), 'value' => "`^$val`0"];
+                $buffer .= $sectionHead . Template::templateReplace('statrow', $args);
+                $sectionHead = '';
             }
         }
-        $charstat_str .= Template::templateReplace('statbuff', ['title' => Translator::translateInline('`0Buffs'), 'value' => $buffs]);
-        $charstat_str .= Template::templateReplace('statend');
-        return $output->appoencode($charstat_str, true);
+
+        return $buffer;
     }
 }

@@ -389,9 +389,11 @@ class PageParts
                 self::addCharStat("Currency");
             }
             self::addCharStat("Gems", number_format((int)$u['gems'], 0, $point, $sep) . PlayerFunctions::checkTempStat("gems", 1));
+            $equipmentSlots = self::buildEquipmentSlotStats($u);
             self::addCharStat("Equipment Info");
-            self::addCharStat("Weapon", $u['weapon']);
-            self::addCharStat("Armor", $u['armor']);
+            foreach ($equipmentSlots as $label => $value) {
+                self::addCharStat($label, $value);
+            }
             if ($u['hashorse'] && isset($mount['mountname'])) {
                 self::addCharStat("Creature", $mount['mountname'] . "`0");
             }
@@ -968,11 +970,200 @@ class PageParts
     }
 
 
-/**
- * Returns a display formatted (and popup enabled) MOTD link - determines if unread MOTD items exist and highlights the link if needed
- *
- * @return string The formatted MOTD link
- */
+
+    /**
+     * Build the data collection for Equipment Info character stats.
+     *
+     * @param array<string,mixed> $user
+     *
+     * @return array<string,string>
+     */
+    private static function buildEquipmentSlotStats(array $user): array
+    {
+        $emptyLabel = Translator::translateInline('None');
+        $userId = (int) ($user['acctid'] ?? 0);
+        $equippedBySlot = self::getEquippedInventoryItems($userId);
+
+        $slotDefinitions = [
+            'Helmet' => ['head', 'helmet'],
+            'Cloak' => ['cape', 'back'],
+            'Amulet' => ['neck', 'amulet'],
+            'Ammunition' => ['ammo', 'ammunition', 'projectile'],
+            'Weapon' => ['weapon', 'righthand', 'mainhand'],
+            'Shield' => ['shield', 'lefthand', 'offhand'],
+            'Armor' => ['body', 'armor', 'chest'],
+            'Legs' => ['legs', 'pants', 'leggings'],
+            'Hands' => ['hands', 'arms', 'gloves', 'gauntlets'],
+            'Feet' => ['feet', 'boots', 'shoes'],
+            'Ring' => ['ring', 'ring1', 'ring2', 'ring3', 'ring4', 'finger'],
+        ];
+
+        $slots = [];
+
+        foreach ($slotDefinitions as $label => $keys) {
+            $names = self::findEquippedNames($equippedBySlot, $keys);
+            $fallback = null;
+
+            if ($label === 'Weapon') {
+                $fallback = $user['weapon'] ?? null;
+            } elseif ($label === 'Armor') {
+                $fallback = $user['armor'] ?? null;
+            }
+
+            $slots[$label] = self::formatEquipmentValue($names, $emptyLabel, $fallback);
+        }
+
+        $hookData = [
+            'user' => $user,
+            'equipped' => $equippedBySlot,
+            'slots' => $slots,
+        ];
+
+        $modified = HookHandler::hook('equipment-charstats', $hookData);
+
+        if (is_array($modified) && isset($modified['slots']) && is_array($modified['slots'])) {
+            $slots = $modified['slots'];
+        }
+
+        return $slots;
+    }
+
+    /**
+     * Retrieve equipped inventory entries grouped by slot.
+     *
+     * @return array<string,array<int,string>>
+     */
+    private static function getEquippedInventoryItems(int $userId): array
+    {
+        static $cache = [];
+
+        if ($userId <= 0) {
+            return [];
+        }
+
+        if (isset($cache[$userId])) {
+            return $cache[$userId];
+        }
+
+        $inventoryTable = Database::prefix('inventory');
+        $itemTable = Database::prefix('item');
+
+        if (! Database::tableExists($inventoryTable) || ! Database::tableExists($itemTable)) {
+            return $cache[$userId] = [];
+        }
+
+        $sql = sprintf(
+            'SELECT i.name, i.equipwhere FROM %s AS i INNER JOIN %s AS inv ON inv.itemid = i.itemid WHERE inv.userid = %d AND inv.equipped = 1',
+            $itemTable,
+            $inventoryTable,
+            $userId
+        );
+
+        $result = Database::query($sql);
+
+        if ($result === false) {
+            return $cache[$userId] = [];
+        }
+
+        $equipped = [];
+
+        while ($row = Database::fetchAssoc($result)) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $slotKey = strtolower(trim((string) ($row['equipwhere'] ?? '')));
+
+            if ($slotKey === '') {
+                continue;
+            }
+
+            $name = trim((string) ($row['name'] ?? ''));
+
+            if ($name === '') {
+                continue;
+            }
+
+            $equipped[$slotKey][] = $name;
+        }
+
+        Database::freeResult($result);
+
+        return $cache[$userId] = $equipped;
+    }
+
+    /**
+     * Collect equipped item names for the provided slot keys.
+     *
+     * @param array<string,array<int,string>> $equipped
+     * @param string[]                        $keys
+     *
+     * @return string[]
+     */
+    private static function findEquippedNames(array $equipped, array $keys): array
+    {
+        $names = [];
+
+        foreach ($keys as $key) {
+            $normalizedKey = strtolower($key);
+
+            if (! isset($equipped[$normalizedKey])) {
+                continue;
+            }
+
+            foreach ($equipped[$normalizedKey] as $itemName) {
+                $itemName = trim((string) $itemName);
+
+                if ($itemName === '') {
+                    continue;
+                }
+
+                $names[] = $itemName;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Format the equipment display value for a slot.
+     *
+     * @param string[]    $names
+     * @param string      $emptyLabel
+     * @param string|null $fallback
+     */
+    private static function formatEquipmentValue(array $names, string $emptyLabel, ?string $fallback = null): string
+    {
+        $unique = [];
+
+        foreach ($names as $name) {
+            $name = trim((string) $name);
+
+            if ($name === '') {
+                continue;
+            }
+
+            $unique[$name] = true;
+        }
+
+        if ($unique !== []) {
+            return implode(', ', array_keys($unique));
+        }
+
+        $fallbackValue = trim((string) ($fallback ?? ''));
+
+        if ($fallbackValue !== '') {
+            return $fallbackValue;
+        }
+
+        return $emptyLabel;
+    }
+
+    /**
+     * Returns a display formatted (and popup enabled) MOTD link - determines if unread MOTD items exist and highlights the link if needed
+     *
+     * @return string The formatted MOTD link
+     */
     public static function motdLink()
     {
         global $session;
@@ -983,3 +1174,12 @@ class PageParts
         }
     }
 }
+
+
+
+
+
+
+
+
+
