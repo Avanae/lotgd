@@ -69,7 +69,7 @@
 					$buffsjoin = "0,none," . join(",",$buffs);
 				else 
 					$buffsjoin = "0,none,";
-				$enum_equip=",No where,righthand,Right Hand,lefthand,Left Hand,head,On the Head,body,On Upper Body,arms,On the Arms,legs,On Lower Body,feet,As Shoes,ring,As Ring,neck,Around the Neck,belt,As Belt";
+				$enum_equip=",No where,righthand,Right Hand,lefthand,Left Hand,head,On the Head,body,On Upper Body,cape,As Cloak,arms,On the Arms,legs,On Lower Body,feet,As Shoes,ring,As Ring,neck,Around the Neck,belt,As Belt";
 				rawoutput("<form action='runmodule.php?module=inventory&op=editor&op2=newitem2&id=$id' method='post'>");
 				addnav("", "runmodule.php?module=inventory&op=editor&op2=newitem2&id=$id");
 				$format = array(
@@ -385,3 +385,4 @@
 	}
 	page_footer();
 ?>
+

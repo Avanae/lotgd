@@ -62,6 +62,7 @@
 		"Armor,title",
 			"head",
 			"body",
+			"cape",
 			"arms",
 			"legs",
 			"feet",
@@ -98,7 +99,7 @@ function inventory_showform($layout,$row){
 	rawoutput("</td></tr><tr><td>&nbsp;</td></tr><tr><td>");
 	rawoutput("<table cellpadding='2' cellspacing='0'>");
 	$i = 0;
-	$wheres = translate(array("righthand"=>"Right Hand","lefthand"=>"Left Hand","head"=>"Your Head","body"=>"Upper Body","arms"=>"Yor Arms","legs"=>"Lower Body","feet"=>"Your Feet","ring1"=>"First Ring","ring2"=>"Second Ring","ring3"=>"Third Ring","neck"=>"Around your Neck","belt"=>"Around your Waist"));
+	$wheres = translate(array("righthand"=>"Right Hand","lefthand"=>"Left Hand","head"=>"Your Head","body"=>"Upper Body","cape"=>"Around your Shoulders","arms"=>"Yor Arms","legs"=>"Lower Body","feet"=>"Your Feet","ring1"=>"First Ring","ring2"=>"Second Ring","ring3"=>"Third Ring","neck"=>"Around your Neck","belt"=>"Around your Waist"));
 	$equip = translate_inline("Equip");
 	$unequip = translate_inline("Unequip");
 	$activate = translate_inline("Activate");
@@ -230,3 +231,4 @@ function inventory_showform($layout,$row){
 }
 
 ?>
+
