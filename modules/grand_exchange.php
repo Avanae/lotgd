@@ -303,12 +303,28 @@ function grand_exchange_load_offer(int $offerId): ?array
         return null;
     }
 
-    $table = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
-    $sql = sprintf('SELECT * FROM `%s` WHERE `offer_id` = %d', $table, $offerId);
+    $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+    $itemsTable = Database::prefix('item');
+    $sql = sprintf(
+        'SELECT o.*, COALESCE(itm.`name`, o.`item_name`) AS `resolved_item_name`
+         FROM `%s` AS o
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
+         WHERE o.`offer_id` = %d',
+        $offersTable,
+        $itemsTable,
+        $offerId
+    );
     $result = Database::query($sql);
     $row = Database::fetchAssoc($result);
 
-    return is_array($row) ? $row : null;
+    if (! is_array($row)) {
+        return null;
+    }
+
+    $row['item_name'] = (string) ($row['resolved_item_name'] ?? $row['item_name'] ?? '');
+    unset($row['resolved_item_name']);
+
+    return $row;
 }
 
 function grand_exchange_begin_transaction(): ?Connection
@@ -410,25 +426,39 @@ function grand_exchange_build_image_name_candidates(string $itemName): array
     return array_keys($unique);
 }
 
-function grand_exchange_get_item_image_html(string $itemName): string
+function grand_exchange_get_item_image_html(int $itemId, string $itemName = ''): string
 {
     static $cache = [];
 
-    if ($itemName === '') {
+    $hasId = $itemId > 0;
+    $cacheKey = $hasId ? sprintf('id:%d', $itemId) : sprintf('name:%s', strtolower($itemName));
+
+    if (! $hasId && $itemName === '') {
         return '';
     }
 
-    if (array_key_exists($itemName, $cache)) {
-        return $cache[$itemName];
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $resolvedName = $itemName;
+
+    if ($resolvedName === '' && $hasId) {
+        $item = grand_exchange_get_item_info($itemId);
+        $resolvedName = (string) ($item['name'] ?? '');
+    }
+
+    if ($resolvedName === '') {
+        return $cache[$cacheKey] = '';
     }
 
     $baseFs = dirname(__DIR__) . DIRECTORY_SEPARATOR . GRAND_EXCHANGE_ITEM_IMAGE_DIR;
 
     if (! is_dir($baseFs)) {
-        return $cache[$itemName] = '';
+        return $cache[$cacheKey] = '';
     }
 
-    $candidates = grand_exchange_build_image_name_candidates($itemName);
+    $candidates = grand_exchange_build_image_name_candidates($resolvedName);
     $extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 
     foreach ($candidates as $candidate) {
@@ -439,16 +469,34 @@ function grand_exchange_get_item_image_html(string $itemName): string
             if (is_file($path)) {
                 $src = GRAND_EXCHANGE_ITEM_IMAGE_DIR . '/' . $filename;
 
-                return $cache[$itemName] = sprintf(
+                grand_exchange_output_item_image_styles();
+
+                $imageTag = sprintf(
                     '<img src="%s" alt="%s" class="grand-exchange-item-image">',
                     grand_exchange_sanitize($src),
-                    grand_exchange_sanitize($itemName)
+                    grand_exchange_sanitize($resolvedName)
                 );
+
+                $cache[$cacheKey] = $imageTag;
+
+                if ($hasId) {
+                    $nameKey = sprintf('name:%s', strtolower($resolvedName));
+                    $cache[$nameKey] = $cache[$nameKey] ?? $imageTag;
+                }
+
+                return $imageTag;
             }
         }
     }
 
-    return $cache[$itemName] = '';
+    $cache[$cacheKey] = '';
+
+    if ($hasId && $resolvedName !== '') {
+        $nameKey = sprintf('name:%s', strtolower($resolvedName));
+        $cache[$nameKey] = $cache[$nameKey] ?? '';
+    }
+
+    return '';
 }
 
 function grand_exchange_output_item_image_styles(): void
@@ -461,17 +509,20 @@ function grand_exchange_output_item_image_styles(): void
 
     $printed = true;
 
-    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}.grand-exchange-sell-preview{display:inline-flex;align-items:center;margin-bottom:6px;font-weight:bold;}</style>');
+    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}.grand-exchange-sell-preview{display:inline-flex;align-items:center;margin-bottom:6px;font-weight:bold;}.grand-exchange-image-cell{text-align:center;width:36px;}</style>');
 }
 
-function grand_exchange_render_item_label(string $itemName): string
+function grand_exchange_render_item_label(string $itemName, int $itemId = 0, bool $includeImage = true): string
 {
-    $image = grand_exchange_get_item_image_html($itemName);
     $label = grand_exchange_sanitize($itemName);
 
-    if ($image !== '') {
-        grand_exchange_output_item_image_styles();
+    if (! $includeImage) {
+        return $label;
+    }
 
+    $image = grand_exchange_get_item_image_html($itemId, $itemName);
+
+    if ($image !== '') {
         return $image . ' ' . $label;
     }
 
@@ -496,6 +547,8 @@ function grand_exchange_render_sell_offers_board(int $viewerId): void
 
     $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
     $accountsTable = Database::prefix('accounts');
+    $itemsTable = Database::prefix('item');
+    $itemsTable = Database::prefix('item');
 
     $conditions = "o.`type` = 'sell' AND o.`status` = 'active' AND o.`quantity_remaining` > 0";
 
@@ -504,14 +557,16 @@ function grand_exchange_render_sell_offers_board(int $viewerId): void
     }
 
     $sql = sprintf(
-        'SELECT o.`offer_id`, o.`item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
+        'SELECT o.`offer_id`, o.`item_id`, COALESCE(itm.`name`, o.`item_name`) AS `item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
          FROM `%s` AS o
          INNER JOIN `%s` AS a ON a.`acctid` = o.`user_id`
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
          WHERE %s
          ORDER BY o.`updated_at` ASC
          LIMIT 25',
         $offersTable,
         $accountsTable,
+        $itemsTable,
         $conditions
     );
 
@@ -543,7 +598,9 @@ function grand_exchange_render_sell_offers_board(int $viewerId): void
         $action = sprintf('runmodule.php?module=grand_exchange&op=accept_sell&offer=%d', $offerId);
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['item_name']) . '</td>');
+        $itemId = (int) ($row['item_id'] ?? 0);
+
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['owner_name']) . '</td>');
         rawoutput('<td>' . $maxQuantity . '/' . (int) $row['quantity_total'] . '</td>');
         rawoutput('<td>' . grand_exchange_format_currency((int) $row['price_gold'], (int) $row['price_gems']) . '</td>');
@@ -581,14 +638,16 @@ function grand_exchange_render_buy_offers_board(int $viewerId): void
     }
 
     $sql = sprintf(
-        'SELECT o.`offer_id`, o.`item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
+        'SELECT o.`offer_id`, o.`item_id`, COALESCE(itm.`name`, o.`item_name`) AS `item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
          FROM `%s` AS o
          INNER JOIN `%s` AS a ON a.`acctid` = o.`user_id`
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
          WHERE %s
          ORDER BY o.`updated_at` ASC
          LIMIT 25',
         $offersTable,
         $accountsTable,
+        $itemsTable,
         $conditions
     );
 
@@ -622,7 +681,9 @@ function grand_exchange_render_buy_offers_board(int $viewerId): void
         $action = sprintf('runmodule.php?module=grand_exchange&op=fulfill_buy&offer=%d', $offerId);
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['item_name']) . '</td>');
+        $itemId = (int) ($row['item_id'] ?? 0);
+
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['owner_name']) . '</td>');
         rawoutput('<td>' . $maxQuantity . '/' . (int) $row['quantity_total'] . '</td>');
         rawoutput('<td>' . grand_exchange_format_currency((int) $row['price_gold'], (int) $row['price_gems']) . '</td>');
@@ -710,7 +771,7 @@ function grand_exchange_render_buy_interface(int $userId): void
         $url = sprintf('runmodule.php?module=grand_exchange&op=create_buy&item=%d', $itemId);
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['name']) . '</td>');
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['description']) . '</td>');
         rawoutput('<td>');
         rawoutput(sprintf("<a href='%s'>Select</a>", $url));
@@ -1096,7 +1157,7 @@ function grand_exchange_render_sell_interface(int $userId): void
     }
 
     rawoutput('<table class="grand-exchange-table" cellspacing="1" cellpadding="3" border="0">');
-    rawoutput('<tr class="trhead"><th>Item</th><th>Available</th><th>Description</th><th></th></tr>');
+    rawoutput('<tr class="trhead"><th>Image</th><th>Item</th><th>Available</th><th>Description</th><th>Sell</th></tr>');
 
     $rowIndex = 0;
 
@@ -1105,12 +1166,16 @@ function grand_exchange_render_sell_interface(int $userId): void
         $itemId = (int) $row['itemid'];
         $url = sprintf('runmodule.php?module=grand_exchange&op=create_sell&item=%d', $itemId);
 
+        $imageHtml = grand_exchange_get_item_image_html($itemId, (string) $row['name']);
+        $imageCell = $imageHtml !== '' ? $imageHtml : '&mdash;';
+
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['name']) . '</td>');
+        rawoutput('<td class="grand-exchange-image-cell">' . $imageCell . '</td>');
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['name'], $itemId, false) . '</td>');
         rawoutput('<td>' . (int) $row['available'] . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['description']) . '</td>');
         rawoutput('<td>');
-        rawoutput(sprintf("<a href='%s'>Sell</a>", $url));
+        rawoutput(sprintf("<a href='%s'>Sell</a>", grand_exchange_sanitize($url)));
         rawoutput('</td>');
         addnav('', $url);
         rawoutput('</tr>');
@@ -1135,7 +1200,7 @@ function grand_exchange_render_sell_creation_form(int $userId, int $itemId): voi
         return;
     }
 
-    $image = grand_exchange_get_item_image_html($item['name']);
+    $image = grand_exchange_get_item_image_html((int) $item['itemid'], (string) $item['name']);
 
     if ($image !== '') {
         grand_exchange_output_item_image_styles();
@@ -1192,12 +1257,16 @@ function grand_exchange_render_manage_interface(int $userId): void
     output('`b`@My Grand Exchange Offers`b`0`n');
 
     $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+    $itemsTable = Database::prefix('item');
     $sql = sprintf(
-        "SELECT `offer_id`, `type`, `item_name`, `quantity_total`, `quantity_remaining`, `price_gold`, `price_gems`, `status`, `updated_at`
-         FROM `%s`
-         WHERE `user_id` = %d
-         ORDER BY FIELD(`status`, 'active', 'completed', 'cancelled'), `updated_at` DESC",
+        "SELECT o.`offer_id`, o.`type`, o.`item_id`, COALESCE(itm.`name`, o.`item_name`) AS `item_name`,
+                o.`quantity_total`, o.`quantity_remaining`, o.`price_gold`, o.`price_gems`, o.`status`, o.`updated_at`
+         FROM `%s` AS o
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
+         WHERE o.`user_id` = %d
+         ORDER BY FIELD(o.`status`, 'active', 'completed', 'cancelled'), o.`updated_at` DESC",
         $offersTable,
+        $itemsTable,
         $userId
     );
 
@@ -1246,7 +1315,9 @@ function grand_exchange_render_manage_interface(int $userId): void
         }
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name']) . '</td>');
+        $itemId = (int) ($row['item_id'] ?? 0);
+
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize(ucfirst((string) $row['type'])) . '</td>');
         rawoutput('<td>' . $remaining . '/' . $total . '</td>');
         rawoutput('<td>' . grand_exchange_format_currency($priceGold, $priceGems) . '</td>');
