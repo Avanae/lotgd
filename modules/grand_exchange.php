@@ -8,8 +8,6 @@ use Lotgd\MySQL\Database;
 use Lotgd\Nav;
 use Lotgd\Output;
 use Lotgd\Translator;
-use RuntimeException;
-use Throwable;
 
 const GRAND_EXCHANGE_MODULE_NAME = 'grand_exchange';
 const GRAND_EXCHANGE_TABLE_OFFERS = 'grand_exchange';
