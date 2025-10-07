@@ -8,8 +8,6 @@ use Lotgd\MySQL\Database;
 use Lotgd\Nav;
 use Lotgd\Output;
 use Lotgd\Translator;
-use RuntimeException;
-use Throwable;
 
 const GRAND_EXCHANGE_MODULE_NAME = 'grand_exchange';
 const GRAND_EXCHANGE_TABLE_OFFERS = 'module_grand_exchange_offers';
@@ -449,7 +447,7 @@ function grand_exchange_output_item_image_styles(): void
 
     $printed = true;
 
-    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}.grand-exchange-sell-preview{display:inline-flex;align-items:center;margin-bottom:6px;font-weight:bold;}</style>');
+      rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}.grand-exchange-sell-preview{display:inline-flex;align-items:center;margin-bottom:6px;font-weight:bold;}</style>');
 }
 
 function grand_exchange_render_item_label(string $itemName): string
