@@ -12,15 +12,15 @@ use RuntimeException;
 use Throwable;
 
 const GRAND_EXCHANGE_MODULE_NAME = 'grand_exchange';
-const GRAND_EXCHANGE_TABLE_OFFERS = 'module_grand_exchange_offers';
-const GRAND_EXCHANGE_TABLE_ITEMS = 'module_grand_exchange_offer_items';
+const GRAND_EXCHANGE_TABLE_OFFERS = 'grand_exchange';
+const GRAND_EXCHANGE_TABLE_ITEMS = 'grand_exchange_items';
 const GRAND_EXCHANGE_ITEM_IMAGE_DIR = 'grand_exchange/items';
 
 function grand_exchange_getmoduleinfo(): array
 {
     return [
         'name' => 'Grand Exchange',
-        'version' => '1.0.1',
+        'version' => '1.0.2',
         'author' => '`2Legend Continuum Team`0',
         'category' => 'Market',
         'download' => 'core_module',
@@ -178,8 +178,8 @@ CREATE TABLE IF NOT EXISTS `$offersTable` (
     KEY `idx_user_status` (`user_id`, `status`),
     KEY `idx_item` (`item_id`),
     KEY `idx_type_status` (`type`, `status`),
-    CONSTRAINT `fk_ge_user` FOREIGN KEY (`user_id`) REFERENCES `$accountsTable` (`acctid`) ON DELETE CASCADE,
-    CONSTRAINT `fk_ge_item` FOREIGN KEY (`item_id`) REFERENCES `$itemsCoreTable` (`itemid`) ON DELETE RESTRICT
+    CONSTRAINT `fk_grand_exchange_user` FOREIGN KEY (`user_id`) REFERENCES `$accountsTable` (`acctid`) ON DELETE CASCADE,
+    CONSTRAINT `fk_grand_exchange_item` FOREIGN KEY (`item_id`) REFERENCES `$itemsCoreTable` (`itemid`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL;
 
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS `$itemsTable` (
     `charges` INT NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     KEY `idx_offer` (`offer_id`),
-    CONSTRAINT `fk_ge_offer_items` FOREIGN KEY (`offer_id`) REFERENCES `$offersTable` (`offer_id`) ON DELETE CASCADE
+    CONSTRAINT `fk_grand_exchange_offer_items` FOREIGN KEY (`offer_id`) REFERENCES `$offersTable` (`offer_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL;
 
@@ -205,9 +205,23 @@ function grand_exchange_ensure_schema(): void
 {
     $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
     $itemsTable = Database::prefix(GRAND_EXCHANGE_TABLE_ITEMS);
+    $legacyOffersTable = Database::prefix('module_grand_exchange_offers');
+    $legacyItemsTable = Database::prefix('module_grand_exchange_offer_items');
 
-    if (! Database::tableExists($offersTable) || ! Database::tableExists($itemsTable)) {
-        grand_exchange_create_schema();
+    if (! Database::tableExists($offersTable)) {
+        if (Database::tableExists($legacyOffersTable)) {
+            Database::query(sprintf('RENAME TABLE `%s` TO `%s`', $legacyOffersTable, $offersTable));
+        } else {
+            grand_exchange_create_schema();
+        }
+    }
+
+    if (! Database::tableExists($itemsTable)) {
+        if (Database::tableExists($legacyItemsTable)) {
+            Database::query(sprintf('RENAME TABLE `%s` TO `%s`', $legacyItemsTable, $itemsTable));
+        } else {
+            grand_exchange_create_schema();
+        }
     }
 }
 
@@ -291,12 +305,28 @@ function grand_exchange_load_offer(int $offerId): ?array
         return null;
     }
 
-    $table = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
-    $sql = sprintf('SELECT * FROM `%s` WHERE `offer_id` = %d', $table, $offerId);
+    $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+    $itemsTable = Database::prefix('item');
+    $sql = sprintf(
+        'SELECT o.*, COALESCE(itm.`name`, o.`item_name`) AS `resolved_item_name`
+         FROM `%s` AS o
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
+         WHERE o.`offer_id` = %d',
+        $offersTable,
+        $itemsTable,
+        $offerId
+    );
     $result = Database::query($sql);
     $row = Database::fetchAssoc($result);
 
-    return is_array($row) ? $row : null;
+    if (! is_array($row)) {
+        return null;
+    }
+
+    $row['item_name'] = (string) ($row['resolved_item_name'] ?? $row['item_name'] ?? '');
+    unset($row['resolved_item_name']);
+
+    return $row;
 }
 
 function grand_exchange_begin_transaction(): ?Connection
@@ -398,25 +428,39 @@ function grand_exchange_build_image_name_candidates(string $itemName): array
     return array_keys($unique);
 }
 
-function grand_exchange_get_item_image_html(string $itemName): string
+function grand_exchange_get_item_image_html(int $itemId, string $itemName = ''): string
 {
     static $cache = [];
 
-    if ($itemName === '') {
+    $hasId = $itemId > 0;
+    $cacheKey = $hasId ? sprintf('id:%d', $itemId) : sprintf('name:%s', strtolower($itemName));
+
+    if (! $hasId && $itemName === '') {
         return '';
     }
 
-    if (array_key_exists($itemName, $cache)) {
-        return $cache[$itemName];
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $resolvedName = $itemName;
+
+    if ($resolvedName === '' && $hasId) {
+        $item = grand_exchange_get_item_info($itemId);
+        $resolvedName = (string) ($item['name'] ?? '');
+    }
+
+    if ($resolvedName === '') {
+        return $cache[$cacheKey] = '';
     }
 
     $baseFs = dirname(__DIR__) . DIRECTORY_SEPARATOR . GRAND_EXCHANGE_ITEM_IMAGE_DIR;
 
     if (! is_dir($baseFs)) {
-        return $cache[$itemName] = '';
+        return $cache[$cacheKey] = '';
     }
 
-    $candidates = grand_exchange_build_image_name_candidates($itemName);
+    $candidates = grand_exchange_build_image_name_candidates($resolvedName);
     $extensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 
     foreach ($candidates as $candidate) {
@@ -427,16 +471,34 @@ function grand_exchange_get_item_image_html(string $itemName): string
             if (is_file($path)) {
                 $src = GRAND_EXCHANGE_ITEM_IMAGE_DIR . '/' . $filename;
 
-                return $cache[$itemName] = sprintf(
+                grand_exchange_output_item_image_styles();
+
+                $imageTag = sprintf(
                     '<img src="%s" alt="%s" class="grand-exchange-item-image">',
                     grand_exchange_sanitize($src),
-                    grand_exchange_sanitize($itemName)
+                    grand_exchange_sanitize($resolvedName)
                 );
+
+                $cache[$cacheKey] = $imageTag;
+
+                if ($hasId) {
+                    $nameKey = sprintf('name:%s', strtolower($resolvedName));
+                    $cache[$nameKey] = $cache[$nameKey] ?? $imageTag;
+                }
+
+                return $imageTag;
             }
         }
     }
 
-    return $cache[$itemName] = '';
+    $cache[$cacheKey] = '';
+
+    if ($hasId && $resolvedName !== '') {
+        $nameKey = sprintf('name:%s', strtolower($resolvedName));
+        $cache[$nameKey] = $cache[$nameKey] ?? '';
+    }
+
+    return '';
 }
 
 function grand_exchange_output_item_image_styles(): void
@@ -449,17 +511,20 @@ function grand_exchange_output_item_image_styles(): void
 
     $printed = true;
 
-    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}</style>');
+    rawoutput('<style>.grand-exchange-item-image{width:24px;height:24px;object-fit:contain;margin-right:4px;vertical-align:middle;}.grand-exchange-sell-preview{display:inline-flex;align-items:center;margin-bottom:6px;font-weight:bold;}.grand-exchange-image-cell{text-align:center;width:36px;}</style>');
 }
 
-function grand_exchange_render_item_label(string $itemName): string
+function grand_exchange_render_item_label(string $itemName, int $itemId = 0, bool $includeImage = true): string
 {
-    $image = grand_exchange_get_item_image_html($itemName);
     $label = grand_exchange_sanitize($itemName);
 
-    if ($image !== '') {
-        grand_exchange_output_item_image_styles();
+    if (! $includeImage) {
+        return $label;
+    }
 
+    $image = grand_exchange_get_item_image_html($itemId, $itemName);
+
+    if ($image !== '') {
         return $image . ' ' . $label;
     }
 
@@ -484,6 +549,8 @@ function grand_exchange_render_sell_offers_board(int $viewerId): void
 
     $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
     $accountsTable = Database::prefix('accounts');
+    $itemsTable = Database::prefix('item');
+    $itemsTable = Database::prefix('item');
 
     $conditions = "o.`type` = 'sell' AND o.`status` = 'active' AND o.`quantity_remaining` > 0";
 
@@ -492,14 +559,16 @@ function grand_exchange_render_sell_offers_board(int $viewerId): void
     }
 
     $sql = sprintf(
-        'SELECT o.`offer_id`, o.`item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
+        'SELECT o.`offer_id`, o.`item_id`, COALESCE(itm.`name`, o.`item_name`) AS `item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
          FROM `%s` AS o
          INNER JOIN `%s` AS a ON a.`acctid` = o.`user_id`
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
          WHERE %s
          ORDER BY o.`updated_at` ASC
          LIMIT 25',
         $offersTable,
         $accountsTable,
+        $itemsTable,
         $conditions
     );
 
@@ -531,7 +600,9 @@ function grand_exchange_render_sell_offers_board(int $viewerId): void
         $action = sprintf('runmodule.php?module=grand_exchange&op=accept_sell&offer=%d', $offerId);
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['item_name']) . '</td>');
+        $itemId = (int) ($row['item_id'] ?? 0);
+
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['owner_name']) . '</td>');
         rawoutput('<td>' . $maxQuantity . '/' . (int) $row['quantity_total'] . '</td>');
         rawoutput('<td>' . grand_exchange_format_currency((int) $row['price_gold'], (int) $row['price_gems']) . '</td>');
@@ -569,14 +640,16 @@ function grand_exchange_render_buy_offers_board(int $viewerId): void
     }
 
     $sql = sprintf(
-        'SELECT o.`offer_id`, o.`item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
+        'SELECT o.`offer_id`, o.`item_id`, COALESCE(itm.`name`, o.`item_name`) AS `item_name`, o.`price_gold`, o.`price_gems`, o.`quantity_remaining`, o.`quantity_total`, o.`updated_at`, a.`name` AS `owner_name`
          FROM `%s` AS o
          INNER JOIN `%s` AS a ON a.`acctid` = o.`user_id`
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
          WHERE %s
          ORDER BY o.`updated_at` ASC
          LIMIT 25',
         $offersTable,
         $accountsTable,
+        $itemsTable,
         $conditions
     );
 
@@ -610,7 +683,9 @@ function grand_exchange_render_buy_offers_board(int $viewerId): void
         $action = sprintf('runmodule.php?module=grand_exchange&op=fulfill_buy&offer=%d', $offerId);
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['item_name']) . '</td>');
+        $itemId = (int) ($row['item_id'] ?? 0);
+
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['owner_name']) . '</td>');
         rawoutput('<td>' . $maxQuantity . '/' . (int) $row['quantity_total'] . '</td>');
         rawoutput('<td>' . grand_exchange_format_currency((int) $row['price_gold'], (int) $row['price_gems']) . '</td>');
@@ -698,7 +773,7 @@ function grand_exchange_render_buy_interface(int $userId): void
         $url = sprintf('runmodule.php?module=grand_exchange&op=create_buy&item=%d', $itemId);
 
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['name']) . '</td>');
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['name'], $itemId) . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['description']) . '</td>');
         rawoutput('<td>');
         rawoutput(sprintf("<a href='%s'>Select</a>", $url));
@@ -1084,7 +1159,7 @@ function grand_exchange_render_sell_interface(int $userId): void
     }
 
     rawoutput('<table class="grand-exchange-table" cellspacing="1" cellpadding="3" border="0">');
-    rawoutput('<tr class="trhead"><th>Item</th><th>Available</th><th>Description</th><th></th></tr>');
+    rawoutput('<tr class="trhead"><th>Image</th><th>Item</th><th>Available</th><th>Description</th><th>Sell</th></tr>');
 
     $rowIndex = 0;
 
@@ -1093,12 +1168,16 @@ function grand_exchange_render_sell_interface(int $userId): void
         $itemId = (int) $row['itemid'];
         $url = sprintf('runmodule.php?module=grand_exchange&op=create_sell&item=%d', $itemId);
 
+        $imageHtml = grand_exchange_get_item_image_html($itemId, (string) $row['name']);
+        $imageCell = $imageHtml !== '' ? $imageHtml : '&mdash;';
+
         rawoutput(sprintf('<tr class="%s">', $rowClass));
-        rawoutput('<td>' . grand_exchange_render_item_label($row['name']) . '</td>');
+        rawoutput('<td class="grand-exchange-image-cell">' . $imageCell . '</td>');
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['name'], $itemId, false) . '</td>');
         rawoutput('<td>' . (int) $row['available'] . '</td>');
         rawoutput('<td>' . grand_exchange_sanitize($row['description']) . '</td>');
         rawoutput('<td>');
-        rawoutput(sprintf("<a href='%s'>Sell</a>", $url));
+        rawoutput(sprintf("<a href='%s'>Sell</a>", grand_exchange_sanitize($url)));
         rawoutput('</td>');
         addnav('', $url);
         rawoutput('</tr>');
@@ -1121,6 +1200,13 @@ function grand_exchange_render_sell_creation_form(int $userId, int $itemId): voi
     if ($available <= 0) {
         output('`$You do not have any unequipped copies of that item to sell.`0`n');
         return;
+    }
+
+    $image = grand_exchange_get_item_image_html((int) $item['itemid'], (string) $item['name']);
+
+    if ($image !== '') {
+        grand_exchange_output_item_image_styles();
+        rawoutput('<div class="grand-exchange-sell-preview">' . $image . grand_exchange_sanitize($item['name']) . '</div>');
     }
 
     output('Preparing to sell `b%s`b.`0`n`n', grand_exchange_sanitize($item['name']));
@@ -1160,4 +1246,539 @@ function grand_exchange_restore_inventory_items(int $userId, int $itemId, array 
     }
 
     invalidatedatacache("inventory-user-$userId");
+}
+
+function grand_exchange_render_manage_interface(int $userId): void
+{
+    if ($userId <= 0) {
+        output('`$You must be logged in to manage your offers.`0`n');
+
+        return;
+    }
+
+    output('`b`@My Grand Exchange Offers`b`0`n');
+
+    $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+    $itemsTable = Database::prefix('item');
+    $sql = sprintf(
+        "SELECT o.`offer_id`, o.`type`, o.`item_id`, COALESCE(itm.`name`, o.`item_name`) AS `item_name`,
+                o.`quantity_total`, o.`quantity_remaining`, o.`price_gold`, o.`price_gems`, o.`status`, o.`updated_at`
+         FROM `%s` AS o
+         LEFT JOIN `%s` AS itm ON itm.`itemid` = o.`item_id`
+         WHERE o.`user_id` = %d
+         ORDER BY FIELD(o.`status`, 'active', 'completed', 'cancelled'), o.`updated_at` DESC",
+        $offersTable,
+        $itemsTable,
+        $userId
+    );
+
+    $result = Database::query($sql);
+    $rows = [];
+
+    while ($row = Database::fetchAssoc($result)) {
+        if (! is_array($row)) {
+            break;
+        }
+
+        $rows[] = $row;
+    }
+
+    if ($rows === []) {
+        output('`7You do not currently have any offers posted on the Grand Exchange.`0`n');
+
+        return;
+    }
+
+    rawoutput('<table class="grand-exchange-table" cellspacing="1" cellpadding="3" border="0">');
+    rawoutput('<tr class="trhead"><th>Item</th><th>Type</th><th>Quantity</th><th>Price (per)</th><th>Status</th><th>Updated</th><th>Actions</th></tr>');
+
+    $rowIndex = 0;
+
+    foreach ($rows as $row) {
+        $rowClass = $rowIndex++ % 2 ? 'trdark' : 'trlight';
+        $offerId = (int) $row['offer_id'];
+        $status = strtolower((string) ($row['status'] ?? 'active'));
+        $statusLabel = ucfirst($status);
+        $remaining = max(0, (int) ($row['quantity_remaining'] ?? 0));
+        $total = max(0, (int) ($row['quantity_total'] ?? 0));
+        $updatedAt = (string) ($row['updated_at'] ?? '');
+        $timestamp = $updatedAt !== '' ? strtotime($updatedAt) : false;
+        $updatedDisplay = $timestamp ? grand_exchange_sanitize(date('Y-m-d H:i', $timestamp)) : '&mdash;';
+        $priceGold = (int) ($row['price_gold'] ?? 0);
+        $priceGems = (int) ($row['price_gems'] ?? 0);
+        $actions = '';
+
+        if ($status === 'active') {
+            $cancelUrl = sprintf('runmodule.php?module=grand_exchange&op=manage&action=cancel&offer=%d', $offerId);
+            $actions = sprintf("<a href='%s'>Cancel</a>", grand_exchange_sanitize($cancelUrl));
+            addnav('', $cancelUrl);
+        } else {
+            $actions = '&mdash;';
+        }
+
+        rawoutput(sprintf('<tr class="%s">', $rowClass));
+        $itemId = (int) ($row['item_id'] ?? 0);
+
+        rawoutput('<td>' . grand_exchange_render_item_label((string) $row['item_name'], $itemId) . '</td>');
+        rawoutput('<td>' . grand_exchange_sanitize(ucfirst((string) $row['type'])) . '</td>');
+        rawoutput('<td>' . $remaining . '/' . $total . '</td>');
+        rawoutput('<td>' . grand_exchange_format_currency($priceGold, $priceGems) . '</td>');
+        rawoutput('<td>' . grand_exchange_sanitize($statusLabel) . '</td>');
+        rawoutput('<td>' . $updatedDisplay . '</td>');
+        rawoutput('<td>' . $actions . '</td>');
+        rawoutput('</tr>');
+    }
+
+    rawoutput('</table>');
+}
+
+function grand_exchange_cancel_offer(int $userId, int $offerId): void
+{
+    global $session;
+
+    if ($userId <= 0 || $offerId <= 0) {
+        output('`$Invalid offer selection.`0`n');
+
+        return;
+    }
+
+    $offer = grand_exchange_load_offer($offerId);
+
+    if (! $offer) {
+        output('`$That offer could not be found.`0`n');
+
+        return;
+    }
+
+    if ((int) ($offer['user_id'] ?? 0) !== $userId) {
+        output('`$You may only cancel your own offers.`0`n');
+
+        return;
+    }
+
+    if (($offer['status'] ?? '') !== 'active') {
+        output('`$That offer is no longer active.`0`n');
+
+        return;
+    }
+
+    $connection = grand_exchange_begin_transaction();
+
+    try {
+        $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+        $itemsTable = Database::prefix(GRAND_EXCHANGE_TABLE_ITEMS);
+
+        if ($offer['type'] === 'buy') {
+            $refundGold = max(0, (int) ($offer['held_gold'] ?? 0));
+            $refundGems = max(0, (int) ($offer['held_gems'] ?? 0));
+
+            if (($session['user']['acctid'] ?? 0) === $userId) {
+                $session['user']['gold'] = ($session['user']['gold'] ?? 0) + $refundGold;
+                $session['user']['gems'] = ($session['user']['gems'] ?? 0) + $refundGems;
+            }
+
+            Database::query(sprintf(
+                "UPDATE `%s`
+                 SET `quantity_remaining` = 0,
+                     `held_gold` = 0,
+                     `held_gems` = 0,
+                     `status` = 'cancelled',
+                     `updated_at` = NOW()
+                 WHERE `offer_id` = %d",
+                $offersTable,
+                $offerId
+            ));
+        } else {
+            if (! grand_exchange_is_inventory_available()) {
+                throw new RuntimeException('Inventory module is required to manage sell offers.');
+            }
+
+            grand_exchange_ensure_inventory_library();
+
+            $itemSql = sprintf(
+                "SELECT `id`, `specialvalue`, `sellvaluegold`, `sellvaluegems`, `charges`
+                 FROM `%s`
+                 WHERE `offer_id` = %d",
+                $itemsTable,
+                $offerId
+            );
+
+            $itemResult = Database::query($itemSql);
+            $reservedRows = [];
+
+            while ($row = Database::fetchAssoc($itemResult)) {
+                if (! is_array($row)) {
+                    break;
+                }
+
+                $reservedRows[] = $row;
+            }
+
+            grand_exchange_restore_inventory_items($userId, (int) $offer['item_id'], $reservedRows);
+
+            Database::query(sprintf(
+                "DELETE FROM `%s` WHERE `offer_id` = %d",
+                $itemsTable,
+                $offerId
+            ));
+
+            Database::query(sprintf(
+                "UPDATE `%s`
+                 SET `quantity_remaining` = 0,
+                     `status` = 'cancelled',
+                     `updated_at` = NOW()
+                 WHERE `offer_id` = %d",
+                $offersTable,
+                $offerId
+            ));
+
+            invalidatedatacache("inventory-user-$userId");
+        }
+
+        grand_exchange_commit_transaction($connection);
+
+        output('`@Your offer has been cancelled and any reserved assets were returned to you.`0`n');
+        debuglog(sprintf('Cancelled Grand Exchange offer #%d.', $offerId));
+    } catch (Throwable $throwable) {
+        grand_exchange_rollback_transaction($connection);
+        output('`$Failed to cancel that offer. Please try again later.`0`n');
+        Output::getInstance()->debug('Grand Exchange cancel error: ' . $throwable->getMessage());
+    }
+}
+
+function grand_exchange_accept_sell_offer(int $buyerId, int $offerId, int $quantity): void
+{
+    global $session;
+
+    if ($buyerId <= 0 || $offerId <= 0 || $quantity <= 0) {
+        output('`$Invalid trade parameters.`0`n');
+
+        return;
+    }
+
+    if (! grand_exchange_is_inventory_available()) {
+        output('`$The inventory module must be active to purchase items here.`0`n');
+
+        return;
+    }
+
+    grand_exchange_ensure_inventory_library();
+
+    $offer = grand_exchange_load_offer($offerId);
+
+    if (! $offer || ($offer['type'] ?? '') !== 'sell') {
+        output('`$That sell offer could not be found.`0`n');
+
+        return;
+    }
+
+    if (($offer['status'] ?? '') !== 'active') {
+        output('`$That offer is no longer active.`0`n');
+
+        return;
+    }
+
+    if ((int) ($offer['user_id'] ?? 0) === $buyerId) {
+        output('`$You cannot purchase your own listings.`0`n');
+
+        return;
+    }
+
+    $available = max(0, (int) ($offer['quantity_remaining'] ?? 0));
+
+    if ($available <= 0) {
+        output('`$There are no items remaining on that listing.`0`n');
+
+        return;
+    }
+
+    $quantity = min($quantity, $available);
+
+    $costGold = max(0, (int) ($offer['price_gold'] ?? 0)) * $quantity;
+    $costGems = max(0, (int) ($offer['price_gems'] ?? 0)) * $quantity;
+
+    if (($session['user']['gold'] ?? 0) < $costGold || ($session['user']['gems'] ?? 0) < $costGems) {
+        output('`$You do not have enough resources to complete that purchase.`0`n');
+
+        return;
+    }
+
+    $itemsTable = Database::prefix(GRAND_EXCHANGE_TABLE_ITEMS);
+    $itemSql = sprintf(
+        "SELECT `id`, `specialvalue`, `sellvaluegold`, `sellvaluegems`, `charges`
+         FROM `%s`
+         WHERE `offer_id` = %d
+         ORDER BY `id` ASC
+         LIMIT %d",
+        $itemsTable,
+        $offerId,
+        $quantity
+    );
+
+    $itemResult = Database::query($itemSql);
+    $reservedRows = [];
+
+    while ($row = Database::fetchAssoc($itemResult)) {
+        if (! is_array($row)) {
+            break;
+        }
+
+        $reservedRows[] = $row;
+    }
+
+    if (count($reservedRows) < $quantity) {
+        output('`$Those items are no longer available.`0`n');
+
+        return;
+    }
+
+    $connection = grand_exchange_begin_transaction();
+
+    try {
+        $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+        $accountsTable = Database::prefix('accounts');
+        $remaining = $available - $quantity;
+        $status = $remaining <= 0 ? 'completed' : 'active';
+        $taxPercent = grand_exchange_get_tax_percent();
+
+        $session['user']['gold'] -= $costGold;
+        $session['user']['gems'] -= $costGems;
+
+        Database::query(sprintf(
+            "UPDATE `%s`
+             SET `quantity_remaining` = %d,
+                 `status` = '%s',
+                 `updated_at` = NOW()
+             WHERE `offer_id` = %d",
+            $offersTable,
+            $remaining,
+            $status,
+            $offerId
+        ));
+
+        $taxGold = $taxPercent > 0 ? (int) floor($costGold * $taxPercent / 100) : 0;
+        $taxGems = $taxPercent > 0 ? (int) floor($costGems * $taxPercent / 100) : 0;
+        $payoutGold = max(0, $costGold - $taxGold);
+        $payoutGems = max(0, $costGems - $taxGems);
+
+        if ($payoutGold > 0 || $payoutGems > 0) {
+            Database::query(sprintf(
+                "UPDATE `%s` SET `gold` = `gold` + %d, `gems` = `gems` + %d WHERE `acctid` = %d",
+                $accountsTable,
+                $payoutGold,
+                $payoutGems,
+                (int) $offer['user_id']
+            ));
+        }
+
+        foreach ($reservedRows as $row) {
+            $rowId = (int) ($row['id'] ?? 0);
+
+            add_item_by_id(
+                (int) $offer['item_id'],
+                1,
+                $buyerId,
+                $row['specialvalue'] ?? '',
+                (int) ($row['sellvaluegold'] ?? 0),
+                (int) ($row['sellvaluegems'] ?? 0),
+                (int) ($row['charges'] ?? 0)
+            );
+
+            Database::query(sprintf('DELETE FROM `%s` WHERE `id` = %d', $itemsTable, $rowId));
+        }
+
+        invalidatedatacache("inventory-user-$buyerId");
+        invalidatedatacache('inventory-user-' . (int) $offer['user_id']);
+
+        grand_exchange_commit_transaction($connection);
+
+        output('`@You completed the purchase successfully.`0`n');
+        debuglog(sprintf(
+            'Bought %d x %s from player %d for %d gold and %d gems.',
+            $quantity,
+            $offer['item_name'],
+            (int) $offer['user_id'],
+            $costGold,
+            $costGems
+        ));
+    } catch (Throwable $throwable) {
+        grand_exchange_rollback_transaction($connection);
+        $session['user']['gold'] += $costGold;
+        $session['user']['gems'] += $costGems;
+        output('`$The purchase could not be completed.`0`n');
+        Output::getInstance()->debug('Grand Exchange purchase error: ' . $throwable->getMessage());
+    }
+}
+
+function grand_exchange_fulfill_buy_offer(int $sellerId, int $offerId, int $quantity): void
+{
+    global $session;
+
+    if ($sellerId <= 0 || $offerId <= 0 || $quantity <= 0) {
+        output('`$Invalid trade parameters.`0`n');
+
+        return;
+    }
+
+    if (! grand_exchange_is_inventory_available()) {
+        output('`$You must have the inventory module active to fulfill buy orders.`0`n');
+
+        return;
+    }
+
+    grand_exchange_ensure_inventory_library();
+
+    $offer = grand_exchange_load_offer($offerId);
+
+    if (! $offer || ($offer['type'] ?? '') !== 'buy') {
+        output('`$That buy offer could not be found.`0`n');
+
+        return;
+    }
+
+    if (($offer['status'] ?? '') !== 'active') {
+        output('`$That offer is no longer active.`0`n');
+
+        return;
+    }
+
+    if ((int) ($offer['user_id'] ?? 0) === $sellerId) {
+        output('`$You cannot fulfill your own buy offer.`0`n');
+
+        return;
+    }
+
+    $remaining = max(0, (int) ($offer['quantity_remaining'] ?? 0));
+
+    if ($remaining <= 0) {
+        output('`$There are no items remaining on that order.`0`n');
+
+        return;
+    }
+
+    $quantity = min($quantity, $remaining);
+
+    $available = grand_exchange_get_available_inventory_quantity($sellerId, (int) $offer['item_id']);
+
+    if ($available < $quantity) {
+        output('`$You only have %s unequipped copies of that item available.`0`n', $available);
+
+        return;
+    }
+
+    $inventoryTable = Database::prefix('inventory');
+    $sql = sprintf(
+        "SELECT `specialvalue`, `sellvaluegold`, `sellvaluegems`, `charges`
+         FROM `%s`
+         WHERE `userid` = %d AND `itemid` = %d AND `equipped` = 0
+         LIMIT %d",
+        $inventoryTable,
+        $sellerId,
+        (int) $offer['item_id'],
+        $quantity
+    );
+
+    $result = Database::query($sql);
+    $reservedRows = [];
+
+    while ($row = Database::fetchAssoc($result)) {
+        if (! is_array($row)) {
+            break;
+        }
+
+        $reservedRows[] = $row;
+    }
+
+    if (count($reservedRows) < $quantity) {
+        output('`$You could not reserve enough items to fulfill that order.`0`n');
+
+        return;
+    }
+
+    $connection = grand_exchange_begin_transaction();
+
+    try {
+        $deleteSql = sprintf(
+            "DELETE FROM `%s`
+             WHERE `userid` = %d AND `itemid` = %d AND `equipped` = 0
+             LIMIT %d",
+            $inventoryTable,
+            $sellerId,
+            (int) $offer['item_id'],
+            $quantity
+        );
+
+        Database::query($deleteSql);
+
+        if (Database::affectedRows() < $quantity) {
+            throw new RuntimeException('Unable to remove the items from your inventory.');
+        }
+
+        $grossGold = max(0, (int) ($offer['price_gold'] ?? 0)) * $quantity;
+        $grossGems = max(0, (int) ($offer['price_gems'] ?? 0)) * $quantity;
+        $taxPercent = grand_exchange_get_tax_percent();
+        $taxGold = $taxPercent > 0 ? (int) floor($grossGold * $taxPercent / 100) : 0;
+        $taxGems = $taxPercent > 0 ? (int) floor($grossGems * $taxPercent / 100) : 0;
+        $payoutGold = max(0, $grossGold - $taxGold);
+        $payoutGems = max(0, $grossGems - $taxGems);
+
+        if (($session['user']['acctid'] ?? 0) === $sellerId) {
+            $session['user']['gold'] = ($session['user']['gold'] ?? 0) + $payoutGold;
+            $session['user']['gems'] = ($session['user']['gems'] ?? 0) + $payoutGems;
+        }
+
+        $offersTable = Database::prefix(GRAND_EXCHANGE_TABLE_OFFERS);
+        $newRemaining = $remaining - $quantity;
+        $status = $newRemaining <= 0 ? 'completed' : 'active';
+        $newHeldGold = max(0, (int) ($offer['held_gold'] ?? 0) - $grossGold);
+        $newHeldGems = max(0, (int) ($offer['held_gems'] ?? 0) - $grossGems);
+
+        Database::query(sprintf(
+            "UPDATE `%s`
+             SET `quantity_remaining` = %d,
+                 `held_gold` = %d,
+                 `held_gems` = %d,
+                 `status` = '%s',
+                 `updated_at` = NOW()
+             WHERE `offer_id` = %d",
+            $offersTable,
+            $newRemaining,
+            $newHeldGold,
+            $newHeldGems,
+            $status,
+            $offerId
+        ));
+
+        foreach ($reservedRows as $row) {
+            add_item_by_id(
+                (int) $offer['item_id'],
+                1,
+                (int) $offer['user_id'],
+                $row['specialvalue'] ?? '',
+                (int) ($row['sellvaluegold'] ?? 0),
+                (int) ($row['sellvaluegems'] ?? 0),
+                (int) ($row['charges'] ?? 0)
+            );
+        }
+
+        invalidatedatacache("inventory-user-$sellerId");
+        invalidatedatacache('inventory-user-' . (int) $offer['user_id']);
+
+        grand_exchange_commit_transaction($connection);
+
+        output('`@You fulfilled that buy order successfully.`0`n');
+        debuglog(sprintf(
+            'Fulfilled buy offer #%d with %d x %s for %d gold and %d gems.',
+            $offerId,
+            $quantity,
+            $offer['item_name'],
+            $grossGold,
+            $grossGems
+        ));
+    } catch (Throwable $throwable) {
+        grand_exchange_rollback_transaction($connection);
+        grand_exchange_restore_inventory_items($sellerId, (int) $offer['item_id'], $reservedRows);
+        output('`$The buy order could not be fulfilled.`0`n');
+        Output::getInstance()->debug('Grand Exchange fulfill error: ' . $throwable->getMessage());
+    }
 }
